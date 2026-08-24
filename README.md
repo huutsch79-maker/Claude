@@ -29,7 +29,8 @@ docker compose exec db psql -U postgres -d jarvis -c \
   "alter role jarvis_app with password '<matches JARVIS_APP_DB_PASSWORD>';"
 
 npm install
-npm run seed        # registers hotmail-outlook and nzb-m365-connector
+npm run seed        # registers hotmail-outlook, nzb-m365-connector, and
+                     # the two read-only tenant-insight capabilities below
 
 docker compose up -d orchestrator
 docker compose logs -f orchestrator
@@ -66,6 +67,21 @@ npm run dev
 npm test        # unit tests (no database required)
 npm run typecheck
 ```
+
+## Tenant insight capabilities (read-only)
+
+`nzb-m365-usage-report` and `nzb-azure-cost-insights` answer usage/cost
+questions and flag likely cleanup candidates (unused licenses, unattached
+disks, etc.) — see docs/architecture.md's "Tenant insights: read-only by
+design" for why each gets its own deliberately narrow credential (Graph
+`Reports.Read.All`; Azure `Reader` + `Cost Management Reader`) rather than
+anything broader: standing service-principal grants aren't gated by Azure
+PIM the way a human admin's role activation is, so these must never be
+more than read-only. Set `JARVIS_CRED_NZB_USAGE_REPORT_OAUTH`,
+`JARVIS_CRED_NZB_AZURE_INSIGHTS_OAUTH`, and
+`JARVIS_NZB_AZURE_SUBSCRIPTION_ID` in `.env` once those app
+registrations exist. Neither capability can act on what it finds — actual
+cleanup still needs a human with PIM-activated access.
 
 ## Adding a dynamic module
 

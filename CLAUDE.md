@@ -47,6 +47,17 @@ Disabling a module = flip `enabled` to false. Removing a module = delete
 its registry row; memory entries are not owned per-module and stay
 intact.
 
+**Tenant insight modules stay read-only.** `nzb-m365-usage-report` and
+`nzb-azure-cost-insights` (see docs/architecture.md) exist to answer cost
+and usage questions and flag likely cleanup candidates — never to act on
+them. This isn't just caution: Azure PIM's just-in-time activation only
+governs a *human's* role assignment, not a service principal's standing
+application permissions or RBAC grants, so any credential broader than
+read-only here would silently bypass PIM altogether. Each gets its own
+narrowest-possible credential (Graph `Reports.Read.All`; Azure `Reader` +
+`Cost Management Reader` — never Contributor or an admin role), and
+actual cleanup goes through a human with PIM-activated access, not JARVIS.
+
 ### Self-heal trust tiers
 
 * **Auto-fix, no approval needed**: reversible, single-system issues —

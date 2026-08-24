@@ -59,6 +59,49 @@ Graph) and `nzb-m365-connector` (category `work`, Microsoft Graph +
 Dynamics BC). Both OAuth flows are stubbed — wiring live app
 registrations is an operational step, not something to fake in code.
 
+## Tenant insights: read-only by design
+
+`nzb-m365-usage-report` (`src/modules/nzb-usage-report/`) and
+`nzb-azure-cost-insights` (`src/modules/nzb-azure-insights/`) answer
+"what's this costing/who's using what/what looks unused" — M365
+license/mailbox usage via Graph's Reports API, and Azure spend/orphaned
+resources (unattached disks, unassociated public IPs) via the Cost
+Management and Resource Graph APIs.
+
+The design constraint that shaped these: **Azure PIM does not gate
+standing application permissions on a service principal.** PIM makes a
+*human's* directory-role or Azure-RBAC-role assignment just-in-time —
+activate, use, expire. It has no equivalent for an app registration's
+admin-consented API permissions or RBAC grants: the moment those are
+consented, they're live, with no activation step, forever (or until
+revoked). So a service principal credential that's broader than
+"strictly read-only reporting" would quietly bypass the exact
+just-in-time discipline PIM exists to enforce.
+
+Given that, each of these two capabilities gets its **own** narrow,
+read-only credential — never Contributor, never a directory-write scope,
+never bundled onto a broader-privilege app registration:
+- `nzb-m365-usage-report` needs only Graph's `Reports.Read.All`
+  application permission.
+- `nzb-azure-cost-insights` needs only Azure RBAC `Reader` + `Cost
+  Management Reader` on the subscription.
+
+They're separate capabilities (not one combined module) partly for that
+credential-per-capability discipline and partly for a technical reason:
+Graph and Azure Resource Manager are different token audiences
+(`graph.microsoft.com` vs `management.azure.com`), so one bearer token
+can't serve both anyway.
+
+Both modules use fixed allowlists rather than accepting a caller-supplied
+report name or KQL query (`ALLOWED_REPORTS` in nzb-usage-report,
+`RESOURCE_GRAPH_PRESETS` in nzb-azure-insights) — defense in depth so
+this can't become an arbitrary-Graph-endpoint or arbitrary-KQL-query
+capability even if a prompt tried to steer it there. Neither module can
+delete, resize, or modify anything; each manifest's `system_prompt` says
+so explicitly, so the model never implies a cleanup it found was already
+acted on — an actual deletion needs a human with PIM-activated
+Contributor access, same as today.
+
 ## Self-heal trust tiers
 
 `src/core/trustTiers.ts` is the single source of truth. New action kinds

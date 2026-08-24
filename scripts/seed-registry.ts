@@ -2,10 +2,12 @@ import "dotenv/config";
 import { createJarvisPool } from "../src/domain/db.js";
 import { hotmailManifest } from "../src/modules/hotmail/manifest.js";
 import { nzbConnectorManifest } from "../src/modules/nzb-connector/manifest.js";
+import { nzbUsageReportManifest } from "../src/modules/nzb-usage-report/manifest.js";
+import { nzbAzureInsightsManifest } from "../src/modules/nzb-azure-insights/manifest.js";
 
 /**
- * Seeds the capabilities table with the two starter dynamic modules. Run
- * once against a fresh database (after db/schema.sql):
+ * Seeds the capabilities table with the starter dynamic modules. Run once
+ * against a fresh database (after db/schema.sql):
  *   npm run seed
  */
 async function seed(): Promise<void> {
@@ -13,7 +15,11 @@ async function seed(): Promise<void> {
   try {
     await upsertCapability(pool, nzbConnectorManifest);
     await upsertCapability(pool, hotmailManifest);
-    console.log("Seeded nzb-m365-connector and hotmail-outlook.");
+    await upsertCapability(pool, nzbUsageReportManifest);
+    await upsertCapability(pool, nzbAzureInsightsManifest);
+    console.log(
+      "Seeded nzb-m365-connector, hotmail-outlook, nzb-m365-usage-report, and nzb-azure-cost-insights.",
+    );
   } finally {
     await pool.end();
   }
