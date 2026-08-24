@@ -123,6 +123,7 @@ export function createDashboardServer(orchestrator: Orchestrator): Server {
       const result = await jarvis.chat.converse(sessionId, message, attachments);
       res.json(result);
     } catch (err) {
+      console.error("[chat] /api/chat failed:", err);
       res.status(502).json({ error: err instanceof Error ? err.message : String(err) });
     }
   });

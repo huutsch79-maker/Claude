@@ -154,7 +154,13 @@ function authHeaders() { return TOKEN ? { authorization: "Bearer " + TOKEN } : {
 
 async function api(path, opts = {}) {
   const res = await fetch(path, { ...opts, headers: { "content-type": "application/json", ...authHeaders(), ...(opts.headers || {}) } });
-  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    // res.statusText is unreliable (HTTP/2 responses — e.g. via Cloudflare —
+    // have no reason phrase, so browsers report it as ""), so always fall
+    // back to the numeric status rather than risking a blank error.
+    throw new Error(body.error || res.statusText || `HTTP ${res.status}`);
+  }
   return res.status === 204 ? null : res.json();
 }
 
