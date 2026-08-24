@@ -1,4 +1,7 @@
 import type { CapabilityContext, CapabilityModule } from "../../domain/capabilityRegistry.js";
+import { getAppOnlyAccessToken } from "../../domain/appOnlyTokenProvider.js";
+
+const GRAPH_SCOPE = "https://graph.microsoft.com/.default";
 
 export interface UsageReportRequest {
   intent: "m365.usage.report";
@@ -34,8 +37,9 @@ const nzbUsageReportModule: CapabilityModule = {
     const req = request as UsageReportRequest;
     if (!ctx.credential) {
       throw new Error(
-        "nzb-m365-usage-report: no credential configured. Set JARVIS_CRED_NZB_USAGE_REPORT_OAUTH " +
-          "(an app registration granted only Reports.Read.All) before using this capability.",
+        "nzb-m365-usage-report: no credential configured. Set JARVIS_CRED_NZB_USAGE_REPORT_OAUTH to " +
+          '{"tenantId":"...","clientId":"...","clientSecret":"..."} for an app registration granted only ' +
+          "Reports.Read.All before using this capability.",
       );
     }
 
@@ -45,9 +49,10 @@ const nzbUsageReportModule: CapabilityModule = {
     }
     const period = req.payload.period ?? "D30";
 
+    const accessToken = await getAppOnlyAccessToken(ctx.credential.value, GRAPH_SCOPE);
     const response = await fetch(
       `https://graph.microsoft.com/v1.0/reports/${report}(period='${period}')?$format=application/json`,
-      { headers: { authorization: `Bearer ${ctx.credential.value}` } },
+      { headers: { authorization: `Bearer ${accessToken}` } },
     );
     if (!response.ok) throw new Error(`nzb-m365-usage-report: Graph report failed (${response.status})`);
     return response.json();

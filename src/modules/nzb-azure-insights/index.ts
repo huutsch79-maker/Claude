@@ -1,4 +1,7 @@
 import type { CapabilityContext, CapabilityModule } from "../../domain/capabilityRegistry.js";
+import { getAppOnlyAccessToken } from "../../domain/appOnlyTokenProvider.js";
+
+const ARM_SCOPE = "https://management.azure.com/.default";
 
 export interface AzureInsightsRequest {
   intent: "azure.cost.summary" | "azure.orphaned-resources";
@@ -34,10 +37,13 @@ const nzbAzureInsightsModule: CapabilityModule = {
     const req = request as AzureInsightsRequest;
     if (!ctx.credential) {
       throw new Error(
-        "nzb-azure-cost-insights: no credential configured. Set JARVIS_CRED_NZB_AZURE_INSIGHTS_OAUTH " +
-          "(an app registration granted only Reader + Cost Management Reader) before using this capability.",
+        "nzb-azure-cost-insights: no credential configured. Set JARVIS_CRED_NZB_AZURE_INSIGHTS_OAUTH to " +
+          '{"tenantId":"...","clientId":"...","clientSecret":"..."} for an app registration granted only ' +
+          "Reader + Cost Management Reader before using this capability.",
       );
     }
+
+    const accessToken = await getAppOnlyAccessToken(ctx.credential.value, ARM_SCOPE);
 
     if (req.intent === "azure.cost.summary") {
       const subscriptionId = process.env.JARVIS_NZB_AZURE_SUBSCRIPTION_ID;
@@ -47,7 +53,7 @@ const nzbAzureInsightsModule: CapabilityModule = {
         `https://management.azure.com/subscriptions/${subscriptionId}/providers/Microsoft.CostManagement/query?api-version=2023-11-01`,
         {
           method: "POST",
-          headers: { authorization: `Bearer ${ctx.credential.value}`, "content-type": "application/json" },
+          headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
           body: JSON.stringify({
             type: "ActualCost",
             timeframe,
@@ -69,7 +75,7 @@ const nzbAzureInsightsModule: CapabilityModule = {
     if (!query) throw new Error(`nzb-azure-cost-insights: unknown preset "${preset}"`);
     const response = await fetch("https://management.azure.com/providers/Microsoft.ResourceGraph/resources?api-version=2022-10-01", {
       method: "POST",
-      headers: { authorization: `Bearer ${ctx.credential.value}`, "content-type": "application/json" },
+      headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
       body: JSON.stringify({ query }),
     });
     if (!response.ok) throw new Error(`nzb-azure-cost-insights: Resource Graph query failed (${response.status})`);
