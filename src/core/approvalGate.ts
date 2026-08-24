@@ -4,6 +4,9 @@ export interface ApprovalRequest {
   domain: string;
   summary: string; // operational description only — no domain content
   kind: string;
+  /** Present only for kind === "run_script" — what to actually execute once approved. */
+  scriptName?: string;
+  scriptArgs?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -44,6 +47,13 @@ export class PushoverApprovalNotifier implements ApprovalNotifier {
  * with the caller (SelfHeal) — this gate only tracks state and notifies;
  * it never applies anything itself, so "requires approval" can never be
  * silently bypassed by a bug in the gate.
+ *
+ * Known v1 limitation: pending approvals live only in this process's
+ * memory, not in the database. An orchestrator restart loses the ability
+ * to approve anything proposed before the restart (core.script_runs still
+ * shows it as "pending_approval" for visibility, but re-approving it would
+ * need re-proposing). Acceptable for a single self-hosted instance; would
+ * need a durable queue before this ever runs as more than one process.
  */
 export class ApprovalGate {
   private readonly pending = new Map<string, ApprovalRequest>();
@@ -62,8 +72,8 @@ export class ApprovalGate {
     return request;
   }
 
-  reject(id: string): void {
-    this.pending.delete(id);
+  reject(id: string): boolean {
+    return this.pending.delete(id);
   }
 
   listPending(): ReadonlyMap<string, ApprovalRequest> {

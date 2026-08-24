@@ -44,6 +44,32 @@ create table if not exists core.reviewer_proposals (
 create index if not exists idx_core_proposals_domain_status
   on core.reviewer_proposals (domain, status);
 
+-- Audit log for the bounded script registry (src/core/scriptRegistry.ts).
+-- Every run is recorded here, success or failure — this is the one place
+-- an operator can see "what did JARVIS actually execute on its own."
+create table if not exists core.script_runs (
+  id           uuid primary key default gen_random_uuid(),
+  domain       text not null,
+  script_name  text not null,          -- must match a name in the in-code registry
+  args         jsonb not null default '{}',
+  trust_tier   text not null check (trust_tier in ('auto_fix', 'requires_approval')),
+  status       text not null check (status in ('applied', 'pending_approval', 'rejected', 'failed')),
+  detail       text,                    -- short operational outcome, never raw stdout/domain content
+  started_at   timestamptz not null default now(),
+  finished_at  timestamptz
+);
+create index if not exists idx_core_script_runs_domain_time
+  on core.script_runs (domain, started_at desc);
+
+-- Tracks which migrations (db/migrations/<domain>/*.sql) have already been
+-- applied, so apply-migration refuses to run the same file twice.
+create table if not exists core.applied_migrations (
+  domain       text not null,
+  filename     text not null,
+  applied_at   timestamptz not null default now(),
+  primary key (domain, filename)
+);
+
 -- =========================================================================
 -- Per-domain schema template (duplicated for `work` and `personal` below,
 -- deliberately not parameterized/looped — explicit beats clever here so a
@@ -152,17 +178,34 @@ begin
 end
 $$;
 
-grant usage on schema work to jarvis_work;
-grant all privileges on all tables in schema work to jarvis_work;
-grant usage on schema core to jarvis_work;
-grant select, insert on core.domain_health_snapshots, core.reviewer_proposals to jarvis_work;
-grant update on core.reviewer_proposals to jarvis_work;
+-- Each domain role OWNS its own schema and tables (not just DML-granted) —
+-- needed so the apply-migration script (src/core/scriptRegistry.ts) can run
+-- real DDL (ALTER TABLE, etc.) as that domain's own role, without ever
+-- needing superuser credentials in the running process. This does not
+-- weaken isolation: jarvis_work still has zero grants anywhere in schema
+-- `personal`, and vice versa — ownership is scoped exactly like everything
+-- else. The actual control on schema changes is the approval gate
+-- (apply-migration is requires_approval tier), not the role's privilege
+-- level. Safe to re-run: ALTER ... OWNER TO is idempotent, and this also
+-- fixes ownership on a database that was provisioned before this change
+-- (tables created by the `postgres` superuser during initial setup).
+alter schema work owner to jarvis_work;
+alter table work.capabilities owner to jarvis_work;
+alter table work.memory owner to jarvis_work;
+alter table work.relations owner to jarvis_work;
 
-grant usage on schema personal to jarvis_personal;
-grant all privileges on all tables in schema personal to jarvis_personal;
-grant usage on schema core to jarvis_personal;
-grant select, insert on core.domain_health_snapshots, core.reviewer_proposals to jarvis_personal;
-grant update on core.reviewer_proposals to jarvis_personal;
+alter schema personal owner to jarvis_personal;
+alter table personal.capabilities owner to jarvis_personal;
+alter table personal.memory owner to jarvis_personal;
+alter table personal.relations owner to jarvis_personal;
+
+-- `core` stays owned by the superuser — domain roles get DML only, never
+-- DDL, on the shared operational-metadata tables (they never need schema
+-- changes there; migrations are domain-scoped only, per db/migrations/).
+grant usage on schema core to jarvis_work, jarvis_personal;
+grant select, insert on core.domain_health_snapshots, core.reviewer_proposals, core.script_runs, core.applied_migrations
+  to jarvis_work, jarvis_personal;
+grant update on core.reviewer_proposals, core.script_runs to jarvis_work, jarvis_personal;
 
 -- jarvis_work has no grants on schema personal, and vice versa: the
 -- database itself refuses cross-domain reads even if application code has

@@ -57,7 +57,7 @@ export class DomainInstance {
       },
       cleanupDuplicateMemory: async () => (await opts.selfHealHandlers?.cleanupDuplicateMemory?.()) ?? 0,
     };
-    this.selfHeal = new SelfHeal(config, approvalGate, handlers);
+    this.selfHeal = new SelfHeal(config, approvalGate, handlers, this.pool);
   }
 
   /** The ONLY thing this domain instance ever hands to the shared orchestrator layer. */

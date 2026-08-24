@@ -69,6 +69,41 @@ each domain's own `JARVIS_<DOMAIN>_PUSHOVER_*` credentials — so even the
 approval notification for a work-domain proposal never uses (or requires)
 a personal Pushover key, and vice versa.
 
+## Bounded script execution
+
+JARVIS can run a small, fixed set of maintenance scripts on its own
+(`src/core/scriptRegistry.ts`) rather than having general shell/exec
+access. Deliberately not a database table like `capabilities`: adding a
+script is a code change that goes through review, because a script can
+touch infrastructure (schema, bulk DB operations) — a meaningfully bigger
+blast radius than one capability module handling one request.
+
+Each script declares its own trust tier and goes through the same
+`SelfHeal` → `ApprovalGate` path as the built-in self-heal actions:
+`vacuum-analyze` is `auto_fix` (routine, reversible, single-domain);
+`apply-migration` is `requires_approval` (CLAUDE.md: "any structural/schema
+change," no exceptions) and only ever runs a `.sql` file that already
+exists in that domain's `db/migrations/<domain>/` folder — it never
+accepts or executes arbitrary SQL text, and refuses a filename containing
+a path separator or `..`. Every run — applied, pending, rejected, or
+failed — is recorded in `core.script_runs` regardless of outcome, so
+there's always an audit trail of what JARVIS actually executed on its own.
+
+Each domain's Postgres role (`jarvis_work` / `jarvis_personal`) **owns**
+its own schema and tables (not just DML-granted) specifically so
+`apply-migration` can run real DDL without the running process ever
+holding superuser credentials. This doesn't weaken isolation — a domain
+role still has zero grants anywhere in the other domain's schema; the
+approval gate, not the role's privilege level, is what actually controls
+schema changes.
+
+Explicitly not built yet, and flagged rather than silently added: scripts
+that would need host-level privilege (restarting the orchestrator
+container, `git pull` + rebuild). Giving the orchestrator container direct
+Docker-socket access to do that is effectively host-root-equivalent —
+worth a deliberate decision (e.g. a narrow host-side helper process
+instead) rather than something to wire up as a side effect of this work.
+
 ## What's explicitly out of scope here (matches CLAUDE.md v1 scope)
 
 - No mid-conversation live relation computation — `RelationsStore` only
