@@ -1,3 +1,5 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type pg from "pg";
 import type { DomainConfig } from "../config/domains.js";
 
@@ -11,6 +13,14 @@ export interface CapabilityRow {
   toolConfig: Record<string, unknown>;
   modelOverride: string | null;
   credentialRef: string | null;
+  /**
+   * A logical id under src/modules/, e.g. "personal/hotmail" — NOT a
+   * filesystem path. Resolved to an actual import path at load time (see
+   * loadModule below) because a fixed path can't be correct in both dev
+   * (tsx running src/**\/*.ts directly) and the built container (node
+   * running dist/src/**\/*.js) — same class of bug fixed in
+   * scriptRegistry.ts's migrations path.
+   */
   modulePath: string;
 }
 
@@ -68,13 +78,30 @@ export class CapabilityRegistry {
   }
 
   async loadModule(row: CapabilityRow): Promise<CapabilityModule> {
-    const mod = (await import(row.modulePath)) as { default?: CapabilityModule } & Partial<CapabilityModule>;
+    const importPath = resolveModuleImportPath(row.modulePath);
+    const mod = (await import(importPath)) as { default?: CapabilityModule } & Partial<CapabilityModule>;
     const impl = mod.default ?? mod;
     if (!impl || typeof impl.handle !== "function" || typeof impl.canHandle !== "function") {
-      throw new Error(`[${this.config.id}] module ${row.modulePath} does not implement CapabilityModule`);
+      throw new Error(`[${this.config.id}] module "${row.modulePath}" (${importPath}) does not implement CapabilityModule`);
     }
     return impl as CapabilityModule;
   }
+}
+
+// Whether *this* file is itself running compiled (dist/src/domain/...) or
+// straight from source (src/domain/... under tsx) tells us which sibling
+// tree the capability modules live in right now, in this same process.
+const runningCompiled = fileURLToPath(import.meta.url).split(path.sep).includes("dist");
+
+function resolveModuleImportPath(logicalId: string): string {
+  if (logicalId.includes("..") || path.isAbsolute(logicalId)) {
+    throw new Error(`capability module id "${logicalId}" must be a relative "domain/name" id, not a path`);
+  }
+  const root = runningCompiled
+    ? path.join(process.cwd(), "dist/src/modules")
+    : path.join(process.cwd(), "src/modules");
+  const ext = runningCompiled ? "js" : "ts";
+  return path.join(root, logicalId, `index.${ext}`);
 }
 
 function rowToCapability(row: Record<string, unknown>): CapabilityRow {

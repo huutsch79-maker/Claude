@@ -11,7 +11,10 @@ import { SelfHeal, type SelfHealHandlers } from "../core/selfHeal.js";
 import { SecurityAccess } from "../core/security.js";
 import { ApprovalGate, PushoverApprovalNotifier } from "../core/approvalGate.js";
 import { CoreOpsStore } from "../core/coreOpsStore.js";
+import { ChatService, type AnthropicMessagesClient } from "../chat/chatService.js";
 import type { OperationalMetadata } from "../orchestrator/operationalMetadata.js";
+
+const DEFAULT_CHAT_MODEL = "claude-opus-5";
 
 /**
  * One fully isolated domain instance: its own credential store, memory,
@@ -29,6 +32,8 @@ export class DomainInstance {
   readonly selfHeal: SelfHeal;
   readonly security: SecurityAccess;
   readonly ops: CoreOpsStore;
+  /** Null when no Anthropic client was configured (e.g. ANTHROPIC_API_KEY unset) — chat is opt-in, not required to run the rest of JARVIS. */
+  readonly chat: ChatService | null;
 
   private readonly pool: pg.Pool;
   private moduleRestartCounts = new Map<string, number>();
@@ -36,7 +41,12 @@ export class DomainInstance {
 
   constructor(
     readonly config: DomainConfig,
-    opts: { embeddingProvider?: EmbeddingProvider; selfHealHandlers?: Partial<SelfHealHandlers> } = {},
+    opts: {
+      embeddingProvider?: EmbeddingProvider;
+      selfHealHandlers?: Partial<SelfHealHandlers>;
+      anthropic?: AnthropicMessagesClient;
+      chatModel?: string;
+    } = {},
   ) {
     this.pool = createDomainPool(config);
     this.credentials = new CredentialStore(config);
@@ -61,6 +71,18 @@ export class DomainInstance {
       cleanupDuplicateMemory: async () => (await opts.selfHealHandlers?.cleanupDuplicateMemory?.()) ?? 0,
     };
     this.selfHeal = new SelfHeal(config, approvalGate, handlers, this.pool);
+
+    this.chat = opts.anthropic
+      ? new ChatService(
+          config,
+          opts.anthropic,
+          this.registry,
+          this.credentials,
+          this.memory,
+          this.relations,
+          opts.chatModel ?? process.env[`${config.credentialEnvPrefix}CHAT_MODEL`] ?? DEFAULT_CHAT_MODEL,
+        )
+      : null;
   }
 
   /** The ONLY thing this domain instance ever hands to the shared orchestrator layer. */

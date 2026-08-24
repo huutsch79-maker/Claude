@@ -120,5 +120,25 @@ export function createDashboardServer(domainManager: DomainManager): Server {
     res.json({ ok: true });
   });
 
+  app.post("/api/domains/:domain/chat", domainParam, async (req, res) => {
+    const domain = domainManager.get(req.params.domain as never);
+    if (!domain.chat) {
+      res.status(503).json({ error: "chat is not configured for this instance (ANTHROPIC_API_KEY unset)" });
+      return;
+    }
+    const sessionId = typeof req.body?.sessionId === "string" ? req.body.sessionId : null;
+    const message = typeof req.body?.message === "string" ? req.body.message : null;
+    if (!sessionId || !message) {
+      res.status(400).json({ error: "sessionId and message are required strings" });
+      return;
+    }
+    try {
+      const result = await domain.chat.converse(sessionId, message);
+      res.json(result);
+    } catch (err) {
+      res.status(502).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
   return createServer(app);
 }

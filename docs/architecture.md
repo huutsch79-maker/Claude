@@ -104,6 +104,55 @@ Docker-socket access to do that is effectively host-root-equivalent —
 worth a deliberate decision (e.g. a narrow host-side helper process
 instead) rather than something to wire up as a side effect of this work.
 
+## Chat interface
+
+`src/chat/chatService.ts` — one `ChatService` per domain, same pattern as
+Reviewer/SelfHeal/SecurityAccess: constructed with that domain's own
+`CapabilityRegistry`, `CredentialStore`, `MemoryStore`, and
+`RelationsStore`. The Anthropic client itself is the one thing shared
+across both domains' `ChatService` instances — it's a stateless reasoning
+layer (the API holds no state between calls), so sharing it costs nothing
+in isolation terms, matching CLAUDE.md's "Claude is the default/primary
+reasoning layer for both domains." Everything that actually carries
+content — conversation history, retrieved memory, which capabilities are
+even visible as tools — stays domain-scoped per instance and never
+crosses. The system prompt itself also states the domain boundary
+explicitly (defense in depth on top of the architectural separation, not
+a substitute for it).
+
+Each turn: enabled capabilities become tools (a uniform `{intent,
+payload}` schema, since that's what both `hotmail-outlook` and
+`nzb-m365-connector` already implement); a `MemoryStore.search()` call
+retrieves related context if an embedding provider is configured (skipped
+silently if not — chat still works, just without recall); Claude runs a
+manual tool-use loop (capped at 8 iterations) dispatching each `tool_use`
+to `CapabilityRegistry.loadModule()` for the exact capability Claude named
+— no priority/conflict resolution needed here, since Claude disambiguates
+by naming one specific tool (unlike the priority-based resolution in
+`CapabilityRegistry.resolve()`, which is for a different, non-LLM-driven
+dispatch path). After the turn, the interaction is written to memory and
+any retrieved memories get an `INFERRED` batch relation to it — one write,
+after the interaction, never mid-conversation, per CLAUDE.md's explicit
+v1 scope.
+
+**Not yet wired:** a capability's `model_override` field exists in the
+registry row but isn't read by the chat loop — every turn uses the
+domain's single top-level model (`claude-opus-5` by default, overridable
+per domain via `JARVIS_<DOMAIN>_CHAT_MODEL`). True per-capability model
+routing (e.g. a cheap classifier picking the capability, then that
+capability's own model taking over) is a bigger dispatch redesign than
+this v1 needs — noted rather than half-implemented.
+
+**Capability module resolution fix:** `CapabilityRow.modulePath` is a
+logical id (`"personal/hotmail"`), not a filesystem path — a fixed path
+computed once at manifest-authoring time couldn't be simultaneously
+correct in dev (`tsx` running `src/**/*.ts`) and the built container
+(`node` running `dist/src/**/*.js`). `CapabilityRegistry.loadModule()`
+resolves the id against whichever tree it finds itself running in
+(detected via its own `import.meta.url`), the same class of fix already
+applied to `scriptRegistry.ts`'s migrations path. Verified against a live
+database in both dev and compiled form before calling this done.
+
 ## What's explicitly out of scope here (matches CLAUDE.md v1 scope)
 
 - No mid-conversation live relation computation — `RelationsStore` only

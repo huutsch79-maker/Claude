@@ -9,8 +9,8 @@ This is the initial minimal build: core modules (reviewer, self-heal,
 security/access) running per-domain, one real dynamic module per domain
 (Hotmail for personal, an NZB M365/Dynamics connector for work), a bounded
 set of maintenance scripts JARVIS can run on itself
-(`src/core/scriptRegistry.ts`), and an ops dashboard for visibility and
-approvals.
+(`src/core/scriptRegistry.ts`), an ops dashboard for visibility and
+approvals, and a per-domain chat interface backed by the Claude API.
 
 ## Run locally (Alfred NUC / any Docker host)
 
@@ -38,13 +38,16 @@ docker compose up -d orchestrator
 docker compose logs -f orchestrator
 ```
 
-Then open `http://<nuc-address>:4570` for the ops dashboard — health per
-domain, pending reviewer proposals (acknowledge/dismiss), the script
-registry (run auto-fix scripts directly; scripts requiring approval show
-up for approve/reject once proposed), script run history, and the
-capability registry (enable/disable). Enter the dashboard token you set in
-`.env` when prompted — it's stored in the browser's `localStorage`, not
-sent anywhere else.
+Then open `http://<nuc-address>:4570` for the ops dashboard — a chat panel
+per domain (talks to Claude, which can call that domain's enabled
+capabilities as tools), health per domain, pending reviewer proposals
+(acknowledge/dismiss), the script registry (run auto-fix scripts directly;
+scripts requiring approval show up for approve/reject once proposed),
+script run history, and the capability registry (enable/disable). Enter
+the dashboard token you set in `.env` when prompted — it's stored in the
+browser's `localStorage`, not sent anywhere else. Chat needs
+`ANTHROPIC_API_KEY` set — without it, the panel is present but every send
+returns a clear "not configured" error rather than failing silently.
 
 ## Develop without Docker
 

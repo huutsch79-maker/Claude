@@ -42,6 +42,14 @@
   .actions { display: flex; gap: 6px; }
   .actions button { font-size: 12px; padding: 4px 8px; }
   #authGate { padding: 60px 24px; text-align: center; color: var(--muted); }
+  .chat-log { max-height: 340px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+  .chat-msg { padding: 8px 10px; border-radius: 8px; font-size: 13px; white-space: pre-wrap; word-break: break-word; }
+  .chat-msg.user { background: rgba(255,255,255,0.06); align-self: flex-end; max-width: 85%; }
+  .chat-msg.assistant { background: rgba(79,140,255,0.12); align-self: flex-start; max-width: 85%; }
+  .chat-msg .tool-note { display: block; margin-top: 4px; font-size: 11px; color: var(--muted); }
+  .chat-input-row { display: flex; gap: 6px; }
+  .chat-input-row input[type="text"] { flex: 1; }
+  .chat-disabled { color: var(--muted); font-style: italic; }
 </style>
 </head>
 <body>
@@ -221,11 +229,81 @@ async function renderCapabilities(container, domain) {
   container.appendChild(section);
 }
 
+function chatSessionId(domain) {
+  const key = "jarvis_chat_session_" + domain;
+  let id = localStorage.getItem(key);
+  if (!id) { id = crypto.randomUUID(); localStorage.setItem(key, id); }
+  return id;
+}
+
+function chatLog(domain) {
+  try { return JSON.parse(localStorage.getItem("jarvis_chat_log_" + domain) || "[]"); }
+  catch { return []; }
+}
+
+function saveChatLog(domain, log) {
+  localStorage.setItem("jarvis_chat_log_" + domain, JSON.stringify(log.slice(-100)));
+}
+
+function renderChat(container, domain) {
+  const section = el("section");
+  section.appendChild(el("h3", { text: "Chat" }));
+
+  const log = chatLog(domain);
+  const logEl = el("div", { class: "chat-log" });
+  for (const msg of log) {
+    const bubble = el("div", { class: "chat-msg " + msg.role, text: msg.text });
+    if (msg.toolCalls && msg.toolCalls.length > 0) {
+      bubble.appendChild(el("span", {
+        class: "tool-note",
+        text: msg.toolCalls.map((t) => (t.ok ? "✓ " : "✗ ") + t.capability).join("  "),
+      }));
+    }
+    logEl.appendChild(bubble);
+  }
+  section.appendChild(logEl);
+
+  const input = el("input", { type: "text", placeholder: "Message JARVIS (" + domain + ")…" });
+  const sendButton = el("button", { class: "primary", text: "Send" });
+  const send = async () => {
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = "";
+    sendButton.setAttribute("disabled", "true");
+    const current = chatLog(domain);
+    current.push({ role: "user", text });
+    saveChatLog(domain, current);
+    logEl.appendChild(el("div", { class: "chat-msg user", text }));
+    logEl.scrollTop = logEl.scrollHeight;
+    try {
+      const result = await api(`/api/domains/${domain}/chat`, {
+        method: "POST",
+        body: JSON.stringify({ sessionId: chatSessionId(domain), message: text }),
+      });
+      const withReply = chatLog(domain);
+      withReply.push({ role: "assistant", text: result.reply, toolCalls: result.toolCalls });
+      saveChatLog(domain, withReply);
+    } catch (e) {
+      const withError = chatLog(domain);
+      withError.push({ role: "assistant", text: "(error: " + e.message + ")" });
+      saveChatLog(domain, withError);
+    }
+    sendButton.removeAttribute("disabled");
+    renderAll();
+  };
+  sendButton.addEventListener("click", send);
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") send(); });
+
+  section.appendChild(el("div", { class: "chat-input-row" }, [input, sendButton]));
+  container.appendChild(section);
+}
+
 async function renderAll() {
   const healthAll = await api("/api/health");
   for (const domain of DOMAINS) {
     const container = document.querySelector(`.content[data-domain="${domain}"]`);
     container.innerHTML = "";
+    renderChat(container, domain);
     await renderHealth(container, domain, healthAll);
     await renderProposals(container, domain);
     await renderScripts(container, domain);

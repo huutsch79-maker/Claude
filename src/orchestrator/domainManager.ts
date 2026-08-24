@@ -1,3 +1,4 @@
+import Anthropic from "@anthropic-ai/sdk";
 import { DOMAINS, type DomainId } from "../config/domains.js";
 import { DomainInstance } from "../domain/Domain.js";
 import { OperationalBus } from "./operationalBus.js";
@@ -20,8 +21,17 @@ export class DomainManager {
   private readonly scheduler = new Scheduler();
 
   constructor() {
+    // Shared across domains on purpose: this is a stateless reasoning
+    // layer (Anthropic's API holds no domain content between calls) — see
+    // docs/architecture.md. What stays domain-scoped is everything each
+    // ChatService is constructed with (registry, credentials, memory,
+    // relations) and its own in-memory conversation history.
+    const anthropic = process.env.ANTHROPIC_API_KEY ? new Anthropic() : undefined;
+    if (!anthropic) {
+      console.warn("[chat] ANTHROPIC_API_KEY not set — chat is disabled for both domains until it's configured.");
+    }
     for (const config of Object.values(DOMAINS)) {
-      this.domains.set(config.id, new DomainInstance(config));
+      this.domains.set(config.id, new DomainInstance(config, { anthropic }));
     }
   }
 

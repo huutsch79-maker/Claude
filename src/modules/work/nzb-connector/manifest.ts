@@ -1,8 +1,3 @@
-import { fileURLToPath } from "node:url";
-import path from "node:path";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
 export const nzbConnectorManifest = {
   name: "nzb-m365-connector",
   enabled: true,
@@ -17,5 +12,5 @@ export const nzbConnectorManifest = {
   tool_config: { provider: "microsoft-graph", tenant: "nzb", scopes: ["Mail.Read"] },
   model_override: null,
   credential_ref: "nzb-m365-oauth",
-  module_path: path.join(__dirname, "index.js"),
+  module_path: "work/nzb-connector",
 };
