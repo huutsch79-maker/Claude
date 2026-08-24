@@ -80,7 +80,11 @@ export class JarvisInstance {
           this.memory,
           this.relations,
           this.selfHeal,
-          opts.chatModel ?? process.env.JARVIS_CHAT_MODEL ?? DEFAULT_CHAT_MODEL,
+          // `||`, not `??`: .env.example ships JARVIS_CHAT_MODEL as an empty
+          // line, and dotenv turns that into "" (defined, not nullish), so
+          // `??` would silently send Claude an empty model string instead
+          // of falling through to the default.
+          opts.chatModel || process.env.JARVIS_CHAT_MODEL || DEFAULT_CHAT_MODEL,
         )
       : null;
   }
