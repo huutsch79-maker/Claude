@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { Orchestrator } from "./orchestrator.js";
 import { createDashboardServer } from "./dashboard.js";
 

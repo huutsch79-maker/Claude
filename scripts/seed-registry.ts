@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { createJarvisPool } from "../src/domain/db.js";
 import { hotmailManifest } from "../src/modules/hotmail/manifest.js";
 import { nzbConnectorManifest } from "../src/modules/nzb-connector/manifest.js";
