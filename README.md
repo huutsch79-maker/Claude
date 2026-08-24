@@ -37,12 +37,14 @@ docker compose logs -f orchestrator
 
 Then open `http://<nuc-address>:4570` for the dashboard — chat as the
 main panel (talks to Claude, which can call any enabled capability as a
-tool, show a chart/list/image inline, and accept a file/image attachment
-via the paperclip button), plus a sidebar with health, pending reviewer
-proposals (acknowledge/dismiss), the script registry (run auto-fix
-scripts directly; scripts requiring approval show up for approve/reject
-once proposed), script run history, and the capability registry
-(enable/disable, grouped by category). Enter the dashboard token you set
+tool, show a chart/list/image inline, run one of its own bounded
+maintenance scripts via the `run_script` tool, and accept a file/image
+attachment via the paperclip button), plus a sidebar with health, pending
+reviewer proposals (acknowledge/dismiss), the script registry (run
+auto-fix scripts directly; scripts requiring approval — whether proposed
+from the dashboard or from chat — show up here for approve/reject), script
+run history, and the capability registry (enable/disable, grouped by
+category). Enter the dashboard token you set
 in `.env` when prompted — it's stored in the browser's `localStorage`,
 not sent anywhere else. Chat needs `ANTHROPIC_API_KEY` set — without it,
 every send returns a clear "not configured" error rather than failing

@@ -76,12 +76,18 @@ host) before it's wired up.
 ### Chat interface
 
 One conversation, backed by Claude, with every enabled capability
-available as a tool. Two things aren't ordinary capability calls:
+available as a tool. A few things aren't ordinary capability calls:
 
 * **Render tools** (`render_chart`, `render_list`, `render_image`) — always
   available, let JARVIS show a chart, a structured list, or an image
   inline in the chat instead of only prose (e.g. "what's this VM's
   performance" → a chart; "my last emails" → a list).
+* **`run_script`** — always available, lets JARVIS propose running one of
+  its own bounded maintenance scripts (`src/core/scriptRegistry.ts`) from
+  the conversation. It goes through the same self-heal trust tiers as
+  everything else: `vacuum-analyze` runs immediately, `apply-migration` is
+  only ever queued for the human to approve (dashboard or Pushover) — chat
+  can propose a change, it can never approve its own change.
 * **File/image attachments** — the user can attach an image or PDF to a
   chat message; it's passed through to Claude as a real content block,
   not just described in text.

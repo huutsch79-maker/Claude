@@ -3,12 +3,28 @@ import type { CapabilityRegistry, CapabilityRow } from "../domain/capabilityRegi
 import type { CredentialStore } from "../domain/credentialStore.js";
 import type { MemoryStore } from "../domain/memoryStore.js";
 import type { RelationsStore } from "../domain/relationsStore.js";
+import { listScripts } from "../core/scriptRegistry.js";
 
 /** Narrowed to exactly what this file calls, so tests can inject a fake without mocking the whole SDK. */
 export interface AnthropicMessagesClient {
   messages: {
     create(params: Anthropic.MessageCreateParamsNonStreaming): Promise<Anthropic.Message>;
   };
+}
+
+/**
+ * Narrowed to exactly what this file calls on SelfHeal — chat only ever
+ * runs the bounded, in-code script registry (never a capability, never
+ * arbitrary code), and reuses the same trust-tier/approval-gate path the
+ * dashboard already uses: an auto_fix script runs immediately, anything
+ * requires_approval is queued and only runs once a human approves it via
+ * the dashboard (or Pushover) — chat can propose, never self-approve.
+ */
+export interface SelfHealRunner {
+  runScript(
+    scriptName: string,
+    args?: Record<string, string>,
+  ): Promise<{ status: "applied" } | { status: "pending_approval"; approvalId: string }>;
 }
 
 export interface ChatToolCall {
@@ -60,6 +76,7 @@ export class ChatService {
     private readonly credentials: CredentialStore,
     private readonly memory: MemoryStore,
     private readonly relations: RelationsStore,
+    private readonly selfHeal: SelfHealRunner,
     private readonly model: string,
     private readonly maxTokens: number = DEFAULT_MAX_TOKENS,
   ) {}
@@ -70,7 +87,7 @@ export class ChatService {
 
     const enabledCapabilities = await this.registry.list({ enabledOnly: true });
     const capabilitiesByName = new Map(enabledCapabilities.map((c) => [c.name, c]));
-    const tools = [...RENDER_TOOLS, ...buildCapabilityTools(enabledCapabilities)];
+    const tools = [...RENDER_TOOLS, RUN_SCRIPT_TOOL, ...buildCapabilityTools(enabledCapabilities)];
 
     const { context: memoryContext, hitIds: retrievedMemoryIds } = await this.retrieveMemoryContext(userMessage);
     const system = buildSystemPrompt(enabledCapabilities) + memoryContext;
@@ -106,6 +123,13 @@ export class ChatService {
           continue;
         }
 
+        if (block.name === "run_script") {
+          const outcome = await this.runScriptTool(block.input);
+          toolResults.push({ type: "tool_result", tool_use_id: block.id, content: outcome.content, is_error: !outcome.ok });
+          toolCalls.push({ capability: `run_script:${outcome.scriptName}`, ok: outcome.ok, summary: outcome.summary });
+          continue;
+        }
+
         const outcome = await this.runCapability(capabilitiesByName.get(block.name), block.name, block.input);
         toolResults.push({ type: "tool_result", tool_use_id: block.id, content: outcome.content, is_error: !outcome.ok });
         toolCalls.push({ capability: block.name, ok: outcome.ok, summary: outcome.summary });
@@ -135,6 +159,37 @@ export class ChatService {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return { ok: false, content: message, summary: `${row.name} failed: ${message}` };
+    }
+  }
+
+  /**
+   * Runs a bounded self-heal script on JARVIS's own request, through the
+   * exact same SelfHeal/ApprovalGate path the dashboard's "Run" button
+   * uses. An auto_fix script executes immediately; a requires_approval
+   * script is only ever queued here — it does not run until a human
+   * approves it (dashboard or Pushover), so the reply must never claim it
+   * already happened.
+   */
+  private async runScriptTool(input: unknown): Promise<{ ok: boolean; content: string; summary: string; scriptName: string }> {
+    const i = input as Record<string, unknown>;
+    const scriptName = typeof i.name === "string" ? i.name : "";
+    const args = i.args && typeof i.args === "object" ? (i.args as Record<string, string>) : {};
+    try {
+      const result = await this.selfHeal.runScript(scriptName, args);
+      if (result.status === "applied") {
+        return { ok: true, content: "applied", summary: `ran script "${scriptName}"`, scriptName };
+      }
+      return {
+        ok: true,
+        content:
+          `queued for approval (id ${result.approvalId}) — this has NOT run yet; ` +
+          `tell the user it needs their approval in the dashboard before it executes`,
+        summary: `queued script "${scriptName}" for approval`,
+        scriptName,
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { ok: false, content: message, summary: `script "${scriptName}" failed: ${message}`, scriptName };
     }
   }
 
@@ -272,6 +327,26 @@ const RENDER_TOOLS: Anthropic.Tool[] = [
   },
 ];
 const RENDER_TOOL_NAMES = new Set(RENDER_TOOLS.map((t) => t.name));
+
+const RUN_SCRIPT_TOOL: Anthropic.Tool = {
+  name: "run_script",
+  description:
+    "Run one of JARVIS's own bounded maintenance scripts — the fixed set in src/core/scriptRegistry.ts, never " +
+    "arbitrary code. Auto-fix scripts run immediately. Scripts requiring approval are only ever queued by this " +
+    "call — they run later, only after the user approves them in the dashboard. Never tell the user a " +
+    "requires_approval script has already run.\n\nAvailable scripts:\n" +
+    listScripts()
+      .map((s) => `- ${s.name} (${s.trustTier}): ${s.description}`)
+      .join("\n"),
+  input_schema: {
+    type: "object",
+    properties: {
+      name: { type: "string", enum: listScripts().map((s) => s.name) },
+      args: { type: "object", description: 'script-specific arguments, e.g. {"file": "..."} for apply-migration' },
+    },
+    required: ["name"],
+  },
+};
 
 function isRenderToolName(name: string): boolean {
   return RENDER_TOOL_NAMES.has(name);

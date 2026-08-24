@@ -79,6 +79,7 @@ export class JarvisInstance {
           this.credentials,
           this.memory,
           this.relations,
+          this.selfHeal,
           opts.chatModel ?? process.env.JARVIS_CHAT_MODEL ?? DEFAULT_CHAT_MODEL,
         )
       : null;

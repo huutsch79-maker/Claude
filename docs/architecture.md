@@ -88,17 +88,26 @@ run — applied, pending, rejected, or failed — is recorded in
 `jarvis.script_runs` regardless of outcome, so there's always an audit
 trail of what JARVIS actually executed on its own.
 
+The script registry is chat-callable too (`run_script` tool in
+`src/chat/chatService.ts`) — JARVIS can propose running one of these
+scripts mid-conversation, and it goes through the exact same
+`SelfHeal.runScript()` → `ApprovalGate` path as the dashboard's "Run"
+button: `vacuum-analyze` executes immediately, `apply-migration` is only
+ever queued, never self-approved. The tool result text explicitly tells
+the model a queued script "has NOT run yet," so a reply can't misreport a
+pending change as already applied; the queued run then shows up in the
+dashboard's existing pending-scripts list for a human to approve or
+reject, same as one proposed from the dashboard itself.
+
 Explicitly not built yet, and flagged rather than silently added: scripts
 that would need host-level privilege (restarting the orchestrator
 container, `git pull` + rebuild). Giving the orchestrator container
 direct Docker-socket access to do that is effectively host-root-equivalent
 — worth a deliberate decision (e.g. a narrow host-side helper process
 instead) rather than something to wire up as a side effect of other work.
-Tracked as an open item: exposing the script registry as chat-callable
-tools (so "run X" in chat flows through the same approval gate as the
-dashboard) is a natural, small next step; JARVIS editing/deploying its
-own source code is the bigger version of this and needs its own scoping
-conversation first.
+JARVIS editing/deploying its own source code is the bigger version of
+"JARVIS proposes, human approves" and needs its own scoping conversation
+before any of it is built.
 
 ## Chat interface
 
@@ -112,7 +121,10 @@ Each turn: enabled capabilities become tools (a uniform `{intent,
 payload}` schema, since that's what both starter connectors already
 implement), plus three always-available **render tools** —
 `render_chart`, `render_list`, `render_image` — that aren't capability
-dispatches at all. When Claude calls one, `ChatService` captures the
+dispatches at all, and a fourth always-available **`run_script`** tool
+that lets JARVIS run one of the bounded scripts from
+`src/core/scriptRegistry.ts` on itself (see "Bounded script execution"
+above for the approval semantics — chat proposes, it never self-approves). When Claude calls one, `ChatService` captures the
 payload into a `widgets` array on the result instead of routing it
 through `CapabilityRegistry.loadModule()`; the dashboard renders each
 widget type inline (an SVG-free CSS bar/line chart, a styled list, or an

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type Anthropic from "@anthropic-ai/sdk";
-import { ChatService, type AnthropicMessagesClient } from "../src/chat/chatService.js";
+import { ChatService, type AnthropicMessagesClient, type SelfHealRunner } from "../src/chat/chatService.js";
 import { CapabilityRegistry, type CapabilityModule, type CapabilityRow } from "../src/domain/capabilityRegistry.js";
 import { CredentialStore } from "../src/domain/credentialStore.js";
 import { MemoryStore } from "../src/domain/memoryStore.js";
@@ -70,7 +70,11 @@ function fakeAnthropic(responses: Anthropic.Message[]): AnthropicMessagesClient 
   };
 }
 
-function buildHarness(anthropicResponses: Anthropic.Message[]) {
+function fakeSelfHeal(): SelfHealRunner & { runScript: ReturnType<typeof vi.fn> } {
+  return { runScript: vi.fn(async () => ({ status: "applied" as const })) };
+}
+
+function buildHarness(anthropicResponses: Anthropic.Message[], selfHeal = fakeSelfHeal()) {
   const pool = {} as never;
   const registry = new CapabilityRegistry(pool);
   const credentials = new CredentialStore({} as NodeJS.ProcessEnv);
@@ -91,9 +95,9 @@ function buildHarness(anthropicResponses: Anthropic.Message[]) {
   relations.writeBatch = relationsBatchSpy as never;
 
   const anthropic = fakeAnthropic(anthropicResponses);
-  const chat = new ChatService(anthropic, registry, credentials, memory, relations, "claude-opus-5");
+  const chat = new ChatService(anthropic, registry, credentials, memory, relations, selfHeal, "claude-opus-5");
 
-  return { chat, anthropic, registry, memory, memoryWriteSpy, relationsBatchSpy, listSpy };
+  return { chat, anthropic, registry, memory, selfHeal, memoryWriteSpy, relationsBatchSpy, listSpy };
 }
 
 describe("ChatService", () => {
@@ -212,5 +216,55 @@ describe("ChatService", () => {
     const content = params.messages[0]!.content as Anthropic.ContentBlockParam[];
     expect(content[0]).toMatchObject({ type: "image", source: { type: "base64", media_type: "image/png", data: "AAAA" } });
     expect(content[1]).toMatchObject({ type: "text", text: "what is this" });
+  });
+
+  it("runs an auto_fix script immediately via the run_script tool", async () => {
+    const selfHeal = fakeSelfHeal();
+    const { chat } = buildHarness(
+      [toolUseMessage("tu_1", "run_script", { name: "vacuum-analyze" }), textMessage("done, vacuumed the tables")],
+      selfHeal,
+    );
+    const result = await chat.converse("session-1", "clean up the database");
+    expect(selfHeal.runScript).toHaveBeenCalledWith("vacuum-analyze", {});
+    expect(result.toolCalls).toEqual([{ capability: "run_script:vacuum-analyze", ok: true, summary: 'ran script "vacuum-analyze"' }]);
+    expect(result.reply).toBe("done, vacuumed the tables");
+  });
+
+  it("queues a requires_approval script without treating it as already applied", async () => {
+    const selfHeal: SelfHealRunner & { runScript: ReturnType<typeof vi.fn> } = {
+      runScript: vi.fn(async () => ({ status: "pending_approval" as const, approvalId: "appr-1" })),
+    };
+    const { chat } = buildHarness(
+      [
+        toolUseMessage("tu_1", "run_script", { name: "apply-migration", args: { file: "001.sql" } }),
+        textMessage("I've queued that migration — it needs your approval in the dashboard first"),
+      ],
+      selfHeal,
+    );
+    const result = await chat.converse("session-1", "apply migration 001.sql");
+    expect(selfHeal.runScript).toHaveBeenCalledWith("apply-migration", { file: "001.sql" });
+    expect(result.toolCalls).toEqual([
+      { capability: "run_script:apply-migration", ok: true, summary: 'queued script "apply-migration" for approval' },
+    ]);
+  });
+
+  it("reports a failed script run as a tool_result error without crashing the turn", async () => {
+    const selfHeal: SelfHealRunner & { runScript: ReturnType<typeof vi.fn> } = {
+      runScript: vi.fn(async () => {
+        throw new Error('unknown script "not-real" — scripts must be registered in code');
+      }),
+    };
+    const { chat } = buildHarness(
+      [toolUseMessage("tu_1", "run_script", { name: "not-real" }), textMessage("sorry, that script doesn't exist")],
+      selfHeal,
+    );
+    const result = await chat.converse("session-1", "run not-real");
+    expect(result.toolCalls).toEqual([
+      {
+        capability: "run_script:not-real",
+        ok: false,
+        summary: 'script "not-real" failed: unknown script "not-real" — scripts must be registered in code',
+      },
+    ]);
   });
 });

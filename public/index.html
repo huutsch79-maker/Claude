@@ -55,7 +55,7 @@
   /* --- main / chat --- */
   .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
   .chat-log { flex: 1; overflow-y: auto; padding: 24px 0; display: flex; flex-direction: column; gap: 16px; }
-  .chat-log-inner { max-width: 760px; margin: 0 auto; width: 100%; padding: 0 24px; display: flex; flex-direction: column; gap: 16px; }
+  .chat-log-inner { max-width: 760px; margin: 0 auto; width: 100%; min-height: 100%; padding: 0 24px; display: flex; flex-direction: column; gap: 16px; }
   .chat-msg-row { display: flex; }
   .chat-msg-row.user { justify-content: flex-end; }
   .chat-msg { padding: 10px 14px; border-radius: 12px; font-size: 14px; white-space: pre-wrap; word-break: break-word; max-width: 85%; }
@@ -95,6 +95,14 @@
   .connect-screen .box { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 24px; width: 320px; display: flex; flex-direction: column; gap: 10px; }
   .connect-screen h2 { margin: 0; font-size: 15px; color: var(--text); }
   .connect-error { color: var(--danger); font-size: 12.5px; }
+
+  .welcome { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; text-align: center; padding: 0 24px; }
+  .welcome-mark { font-size: 34px; }
+  .welcome h2 { margin: 0; font-size: 19px; color: var(--text); font-weight: 600; }
+  .welcome p { margin: 0; color: var(--muted); font-size: 13.5px; max-width: 380px; }
+  .welcome-prompts { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; max-width: 520px; }
+  .welcome-prompts button { background: var(--panel); border: 1px solid var(--border); color: var(--text); padding: 8px 14px; border-radius: 20px; font-size: 12.5px; }
+  .welcome-prompts button:hover { border-color: var(--accent); color: var(--accent); }
 
   @media (max-width: 800px) {
     .sidebar { position: fixed; z-index: 10; height: 100vh; transform: translateX(-100%); transition: transform 0.15s ease; }
@@ -217,10 +225,35 @@ function renderWidget(widget) {
   return box;
 }
 
+const EXAMPLE_PROMPTS = [
+  "What's this VM's performance looking like?",
+  "Show me my last few emails",
+  "What's on my calendar this week?",
+  "Any open reviewer proposals?",
+];
+
+function renderWelcome() {
+  const box = el("div", { class: "welcome" });
+  box.appendChild(el("div", { class: "welcome-mark", text: "●" }));
+  box.appendChild(el("h2", { text: "JARVIS is ready" }));
+  box.appendChild(el("p", { text: "One assistant, one memory, across work and everything else. Ask a question, attach a file, or try one of these:" }));
+  const prompts = el("div", { class: "welcome-prompts" });
+  for (const p of EXAMPLE_PROMPTS) {
+    prompts.appendChild(el("button", { text: p, onclick: () => { document.getElementById("messageInput").value = p; sendMessage(); } }));
+  }
+  box.appendChild(prompts);
+  return box;
+}
+
 function renderChatLog() {
   const inner = document.getElementById("chatLogInner");
   inner.innerHTML = "";
-  for (const msg of chatLog()) inner.appendChild(renderChatMessage(msg));
+  const log = chatLog();
+  if (log.length === 0) {
+    inner.appendChild(renderWelcome());
+    return;
+  }
+  for (const msg of log) inner.appendChild(renderChatMessage(msg));
   document.getElementById("chatLog").scrollTop = 999999;
 }
 
