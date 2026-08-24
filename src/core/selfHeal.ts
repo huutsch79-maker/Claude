@@ -1,11 +1,10 @@
 import type pg from "pg";
-import type { DomainConfig } from "../config/domains.js";
 import { ApprovalGate } from "./approvalGate.js";
 import { classifyTrustTier, type SelfHealActionKind } from "./trustTiers.js";
 import { getScript, type ScriptContext } from "./scriptRegistry.js";
 
 export interface SelfHealContext {
-  summary: string; // operational description, no domain content
+  summary: string; // operational description
   moduleName?: string;
   cacheScope?: string;
   proposalId?: string;
@@ -25,7 +24,6 @@ export interface SelfHealHandlers {
  */
 export class SelfHeal {
   constructor(
-    private readonly config: DomainConfig,
     private readonly approvalGate: ApprovalGate,
     private readonly handlers: SelfHealHandlers,
     private readonly pool: pg.Pool,
@@ -35,7 +33,7 @@ export class SelfHeal {
     const tier = classifyTrustTier(kind);
     if (tier === "requires_approval") {
       const id = context.proposalId ?? crypto.randomUUID();
-      await this.approvalGate.propose(id, { domain: this.config.id, summary: context.summary, kind });
+      await this.approvalGate.propose(id, { summary: context.summary, kind });
       return "pending_approval";
     }
     await this.applyAutoFix(kind, context);
@@ -63,13 +61,12 @@ export class SelfHeal {
   ): Promise<{ status: "applied" } | { status: "pending_approval"; approvalId: string }> {
     const script = getScript(scriptName);
     if (!script) {
-      throw new Error(`[${this.config.id}] unknown script "${scriptName}" — scripts must be registered in code`);
+      throw new Error(`unknown script "${scriptName}" — scripts must be registered in code`);
     }
 
     if (script.trustTier === "requires_approval") {
       const id = crypto.randomUUID();
       await this.approvalGate.propose(id, {
-        domain: this.config.id,
         summary: `run script "${scriptName}": ${script.description}`,
         kind: "run_script",
         scriptName,
@@ -95,7 +92,7 @@ export class SelfHeal {
     const wasPending = this.approvalGate.reject(id);
     if (!wasPending) return false;
     await this.pool.query(
-      `update core.script_runs set status = 'rejected', finished_at = now() where id = $1`,
+      `update jarvis.script_runs set status = 'rejected', finished_at = now() where id = $1`,
       [id],
     );
     return true;
@@ -103,13 +100,13 @@ export class SelfHeal {
 
   private async executeAndRecord(scriptName: string, args: Record<string, string>, existingRunId?: string): Promise<void> {
     const script = getScript(scriptName);
-    if (!script) throw new Error(`[${this.config.id}] unknown script "${scriptName}"`);
-    const ctx: ScriptContext = { domain: this.config, pool: this.pool, args };
+    if (!script) throw new Error(`unknown script "${scriptName}"`);
+    const ctx: ScriptContext = { pool: this.pool, args };
     try {
       const result = await script.run(ctx);
       if (existingRunId) {
         await this.pool.query(
-          `update core.script_runs set status = 'applied', detail = $2, finished_at = now() where id = $1`,
+          `update jarvis.script_runs set status = 'applied', detail = $2, finished_at = now() where id = $1`,
           [existingRunId, result.detail],
         );
       } else {
@@ -119,7 +116,7 @@ export class SelfHeal {
       const detail = err instanceof Error ? err.message : String(err);
       if (existingRunId) {
         await this.pool.query(
-          `update core.script_runs set status = 'failed', detail = $2, finished_at = now() where id = $1`,
+          `update jarvis.script_runs set status = 'failed', detail = $2, finished_at = now() where id = $1`,
           [existingRunId, detail],
         );
       } else {
@@ -139,9 +136,9 @@ export class SelfHeal {
   ): Promise<void> {
     const finished = status === "pending_approval" ? null : new Date().toISOString();
     await this.pool.query(
-      `insert into core.script_runs (id, domain, script_name, args, trust_tier, status, detail, finished_at)
-       values ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [id, this.config.id, scriptName, JSON.stringify(args), trustTier, status, detail, finished],
+      `insert into jarvis.script_runs (id, script_name, args, trust_tier, status, detail, finished_at)
+       values ($1, $2, $3, $4, $5, $6, $7)`,
+      [id, scriptName, JSON.stringify(args), trustTier, status, detail, finished],
     );
   }
 

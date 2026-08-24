@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { getScript, listScripts, SCRIPTS } from "../src/core/scriptRegistry.js";
-import { DOMAINS } from "../src/config/domains.js";
 
 describe("script registry", () => {
   it("only contains the explicitly registered scripts", () => {
@@ -27,19 +26,19 @@ describe("script registry", () => {
   it("apply-migration rejects a filename with a path separator (traversal attempt)", async () => {
     const script = getScript("apply-migration")!;
     await expect(
-      script.run({ domain: DOMAINS.work, pool: {} as never, args: { file: "../../etc/passwd" } }),
+      script.run({ pool: {} as never, args: { file: "../../etc/passwd" } }),
     ).rejects.toThrow(/unsafe filename/);
   });
 
   it("apply-migration rejects a filename that doesn't exist on disk", async () => {
     const script = getScript("apply-migration")!;
     await expect(
-      script.run({ domain: DOMAINS.work, pool: {} as never, args: { file: "0001_does_not_exist.sql" } }),
+      script.run({ pool: {} as never, args: { file: "0001_does_not_exist.sql" } }),
     ).rejects.toThrow(/not a known migration/);
   });
 
   it("apply-migration requires a file arg", async () => {
     const script = getScript("apply-migration")!;
-    await expect(script.run({ domain: DOMAINS.work, pool: {} as never, args: {} })).rejects.toThrow(/requires/);
+    await expect(script.run({ pool: {} as never, args: {} })).rejects.toThrow(/requires/);
   });
 });

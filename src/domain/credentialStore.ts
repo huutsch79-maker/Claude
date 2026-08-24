@@ -1,24 +1,29 @@
-import type { DomainConfig } from "../config/domains.js";
 import type { CredentialStatusSummary } from "../orchestrator/operationalMetadata.js";
 
+const CREDENTIAL_ENV_PREFIX = "JARVIS_CRED_";
+
 export interface CredentialRecord {
-  ref: string; // pointer/name, e.g. "m365-oauth" — never the secret itself
+  ref: string; // pointer/name, e.g. "nzb-m365-oauth" — never the secret itself
   value: string;
   expiresAt: string | null;
 }
 
 /**
- * One instance per domain, reading only env vars under that domain's own
- * prefix (JARVIS_WORK_* / JARVIS_PERSONAL_*). There is deliberately no way
- * to construct this with another domain's prefix from inside a capability
- * module — modules only ever receive the store their own DomainInstance
- * built for them.
+ * Reads credentials from env vars under one shared prefix. Each capability
+ * still points at its own credential_ref (a real, distinct account —
+ * NZB's M365 tenant and a personal Hotmail account are never the same
+ * secret), but there's no per-domain namespace anymore: unifying memory
+ * and chat removed the reason for one. See docs/architecture.md.
  */
 export class CredentialStore {
-  constructor(private readonly config: DomainConfig, private readonly env: NodeJS.ProcessEnv = process.env) {}
+  constructor(private readonly env: NodeJS.ProcessEnv = process.env) {}
+
+  private envKey(ref: string): string {
+    return `${CREDENTIAL_ENV_PREFIX}${ref.toUpperCase().replace(/[^A-Z0-9]/g, "_")}`;
+  }
 
   get(ref: string): CredentialRecord | null {
-    const key = `${this.config.credentialEnvPrefix}${ref.toUpperCase().replace(/[^A-Z0-9]/g, "_")}`;
+    const key = this.envKey(ref);
     const value = this.env[key];
     if (!value) return null;
     const expiresAtKey = `${key}_EXPIRES_AT`;
@@ -28,15 +33,12 @@ export class CredentialStore {
   require(ref: string): CredentialRecord {
     const record = this.get(ref);
     if (!record) {
-      throw new Error(
-        `[${this.config.id}] missing credential "${ref}" — expected env var ` +
-          `${this.config.credentialEnvPrefix}${ref.toUpperCase()}`,
-      );
+      throw new Error(`missing credential "${ref}" — expected env var ${this.envKey(ref)}`);
     }
     return record;
   }
 
-  /** Used by SecurityAccess to audit expiry within this domain only — never returns raw values. */
+  /** Used by SecurityAccess to audit expiry — never returns raw values. */
   auditStatuses(refs: string[]): CredentialStatusSummary[] {
     const now = Date.now();
     return refs.map((ref) => {

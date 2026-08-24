@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type Anthropic from "@anthropic-ai/sdk";
 import { ChatService, type AnthropicMessagesClient } from "../src/chat/chatService.js";
-import { DOMAINS } from "../src/config/domains.js";
 import { CapabilityRegistry, type CapabilityModule, type CapabilityRow } from "../src/domain/capabilityRegistry.js";
 import { CredentialStore } from "../src/domain/credentialStore.js";
 import { MemoryStore } from "../src/domain/memoryStore.js";
@@ -12,6 +11,7 @@ function capabilityRow(overrides: Partial<CapabilityRow> = {}): CapabilityRow {
   return {
     id: "cap-1",
     name: "test-capability",
+    category: "personal",
     enabled: true,
     priority: 100,
     schemaDef: {},
@@ -19,7 +19,7 @@ function capabilityRow(overrides: Partial<CapabilityRow> = {}): CapabilityRow {
     toolConfig: {},
     modelOverride: null,
     credentialRef: null,
-    modulePath: "personal/hotmail", // unused once loadModule is stubbed
+    modulePath: "hotmail", // unused once loadModule is stubbed
     ...overrides,
   };
 }
@@ -72,14 +72,14 @@ function fakeAnthropic(responses: Anthropic.Message[]): AnthropicMessagesClient 
 
 function buildHarness(anthropicResponses: Anthropic.Message[]) {
   const pool = {} as never;
-  const registry = new CapabilityRegistry(DOMAINS.personal, pool);
-  const credentials = new CredentialStore(DOMAINS.personal, {} as NodeJS.ProcessEnv);
-  const memory = new MemoryStore(DOMAINS.personal, pool, {
+  const registry = new CapabilityRegistry(pool);
+  const credentials = new CredentialStore({} as NodeJS.ProcessEnv);
+  const memory = new MemoryStore(pool, {
     embed: async () => {
       throw new Error("no embedding provider configured");
     },
   } as EmbeddingProvider);
-  const relations = new RelationsStore(DOMAINS.personal, pool);
+  const relations = new RelationsStore(pool);
 
   const listSpy = vi.fn(async () => [capabilityRow()]);
   registry.list = listSpy as never;
@@ -91,7 +91,7 @@ function buildHarness(anthropicResponses: Anthropic.Message[]) {
   relations.writeBatch = relationsBatchSpy as never;
 
   const anthropic = fakeAnthropic(anthropicResponses);
-  const chat = new ChatService(DOMAINS.personal, anthropic, registry, credentials, memory, relations, "claude-opus-5");
+  const chat = new ChatService(anthropic, registry, credentials, memory, relations, "claude-opus-5");
 
   return { chat, anthropic, registry, memory, memoryWriteSpy, relationsBatchSpy, listSpy };
 }
@@ -102,6 +102,7 @@ describe("ChatService", () => {
     const result = await chat.converse("session-1", "hi");
     expect(result.reply).toBe("Hello there!");
     expect(result.toolCalls).toEqual([]);
+    expect(result.widgets).toEqual([]);
   });
 
   it("degrades gracefully when memory/embedding isn't configured (no crash, no recall)", async () => {
@@ -169,5 +170,47 @@ describe("ChatService", () => {
     const result = await chat.converse("session-1", "loop forever");
     expect(result.reply).toBe(""); // never reached end_turn
     expect(result.toolCalls.length).toBe(8); // MAX_TOOL_ITERATIONS
+  });
+
+  it("captures a render_chart tool call as a widget instead of dispatching to a capability", async () => {
+    const { chat, registry } = buildHarness([
+      toolUseMessage("tu_1", "render_chart", { title: "VM CPU", chartType: "bar", series: [{ label: "vm1", value: 42 }] }),
+      textMessage("here's the CPU usage"),
+    ]);
+    const loadModuleSpy = vi.fn();
+    registry.loadModule = loadModuleSpy as never;
+
+    const result = await chat.converse("session-1", "show me VM performance");
+    expect(result.widgets).toEqual([
+      { type: "chart", title: "VM CPU", chartType: "bar", series: [{ label: "vm1", value: 42 }], unit: undefined },
+    ]);
+    expect(result.toolCalls).toEqual([]); // render tools aren't capability dispatches
+    expect(loadModuleSpy).not.toHaveBeenCalled();
+  });
+
+  it("captures a render_list tool call as a widget", async () => {
+    const { chat } = buildHarness([
+      toolUseMessage("tu_1", "render_list", { title: "Recent mail", items: [{ primary: "Hi there" }] }),
+      textMessage("here's your mail"),
+    ]);
+    const result = await chat.converse("session-1", "what's my last mail");
+    expect(result.widgets).toEqual([{ type: "list", title: "Recent mail", items: [{ primary: "Hi there" }] }]);
+  });
+
+  it("rejects an unsupported attachment type before calling the API", async () => {
+    const { chat, anthropic } = buildHarness([textMessage("unused")]);
+    await expect(
+      chat.converse("session-1", "look at this", [{ mediaType: "application/zip", base64Data: "AAAA" }]),
+    ).rejects.toThrow(/unsupported attachment type/);
+    expect(anthropic.calls).toHaveLength(0);
+  });
+
+  it("builds a multi-block user message for a supported image attachment", async () => {
+    const { chat, anthropic } = buildHarness([textMessage("nice photo")]);
+    await chat.converse("session-1", "what is this", [{ mediaType: "image/png", base64Data: "AAAA", filename: "x.png" }]);
+    const params = anthropic.calls[0] as Anthropic.MessageCreateParamsNonStreaming;
+    const content = params.messages[0]!.content as Anthropic.ContentBlockParam[];
+    expect(content[0]).toMatchObject({ type: "image", source: { type: "base64", media_type: "image/png", data: "AAAA" } });
+    expect(content[1]).toMatchObject({ type: "text", text: "what is this" });
   });
 });

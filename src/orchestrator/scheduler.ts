@@ -1,8 +1,4 @@
-/**
- * Minimal interval-based scheduler. Each domain gets its own independent
- * timer (see domainManager.ts) so scheduling one domain's cycle can never
- * block or interleave with another's.
- */
+/** Minimal interval-based scheduler used by the orchestrator's reviewer/health cycles. */
 export class Scheduler {
   private readonly timers: NodeJS.Timeout[] = [];
 

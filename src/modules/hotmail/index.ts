@@ -1,4 +1,4 @@
-import type { CapabilityContext, CapabilityModule } from "../../../domain/capabilityRegistry.js";
+import type { CapabilityContext, CapabilityModule } from "../../domain/capabilityRegistry.js";
 
 export interface EmailRequest {
   intent: "email.search" | "email.send";
@@ -6,14 +6,13 @@ export interface EmailRequest {
 }
 
 /**
- * Personal-domain dynamic module: Hotmail/Outlook via Microsoft Graph.
- * Proves the dynamic-module pattern from CLAUDE.md — this is the one real
- * personal-domain connector recommended to build first, alongside the
- * work domain's NZB connector.
+ * Hotmail/Outlook via Microsoft Graph. Proves the dynamic-module pattern
+ * from CLAUDE.md — one of the two starter connectors, alongside the NZB
+ * connector.
  *
  * The OAuth exchange itself is intentionally stubbed: wiring a live
  * Microsoft Graph app registration is an operational step for whoever
- * runs this on the Alfred NUC, not something to fake here.
+ * runs this, not something to fake here.
  */
 const hotmailModule: CapabilityModule = {
   canHandle(request: unknown): boolean {
@@ -25,7 +24,7 @@ const hotmailModule: CapabilityModule = {
     const req = request as EmailRequest;
     if (!ctx.credential) {
       throw new Error(
-        'hotmail-outlook: no credential configured. Set JARVIS_PERSONAL_HOTMAIL_OAUTH ' +
+        "hotmail-outlook: no credential configured. Set JARVIS_CRED_HOTMAIL_OAUTH " +
           "(and complete the Microsoft Graph OAuth flow) before using this capability.",
       );
     }

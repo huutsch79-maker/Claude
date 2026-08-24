@@ -1,5 +1,4 @@
 import type pg from "pg";
-import type { DomainConfig } from "../config/domains.js";
 
 export interface ReviewerProposalRow {
   id: string;
@@ -21,34 +20,20 @@ export interface ScriptRunRow {
   finishedAt: string | null;
 }
 
-/**
- * A domain-scoped view into the shared `core` tables (reviewer_proposals,
- * script_runs) — constructed with one domain's own pool/role, and every
- * query filters on `domain = this domain's id` at the application layer.
- *
- * Note: unlike the per-domain schemas, `core` tables are a single shared
- * table grantable to both roles (see db/schema.sql) — the domain filter
- * here is belt-and-braces, not a hard database-enforced boundary the way
- * schema-level isolation is. That's an accepted trade-off because these
- * tables only ever hold operational summaries, never domain content
- * (enforced by what Reviewer/SelfHeal choose to write into `summary` /
- * `detail`, not by anything at the SQL layer). A stricter boundary (e.g.
- * Postgres row-level security keyed on the connecting role) would close
- * that gap if it's ever worth the added complexity.
- */
+/** Read/write access to jarvis.reviewer_proposals and jarvis.script_runs. */
 export class CoreOpsStore {
-  constructor(private readonly config: DomainConfig, private readonly pool: pg.Pool) {}
+  constructor(private readonly pool: pg.Pool) {}
 
   async listReviewerProposals(status?: ReviewerProposalRow["status"]): Promise<ReviewerProposalRow[]> {
-    const params: unknown[] = [this.config.id];
-    let where = "domain = $1";
+    const params: unknown[] = [];
+    let where = "";
     if (status) {
       params.push(status);
-      where += ` and status = $${params.length}`;
+      where = `where status = $${params.length}`;
     }
     const result = await this.pool.query(
       `select id, category, summary, trust_tier, status, created_at
-       from core.reviewer_proposals where ${where} order by created_at desc limit 200`,
+       from jarvis.reviewer_proposals ${where} order by created_at desc limit 200`,
       params,
     );
     return result.rows.map((r) => ({
@@ -68,9 +53,9 @@ export class CoreOpsStore {
    */
   async setReviewerProposalStatus(id: string, status: "approved" | "rejected"): Promise<boolean> {
     const result = await this.pool.query(
-      `update core.reviewer_proposals set status = $2, resolved_at = now()
-       where id = $1 and domain = $3 and status = 'pending'`,
-      [id, status, this.config.id],
+      `update jarvis.reviewer_proposals set status = $2, resolved_at = now()
+       where id = $1 and status = 'pending'`,
+      [id, status],
     );
     return (result.rowCount ?? 0) > 0;
   }
@@ -78,8 +63,8 @@ export class CoreOpsStore {
   async listScriptRuns(limit = 100): Promise<ScriptRunRow[]> {
     const result = await this.pool.query(
       `select id, script_name, args, trust_tier, status, detail, started_at, finished_at
-       from core.script_runs where domain = $1 order by started_at desc limit $2`,
-      [this.config.id, limit],
+       from jarvis.script_runs order by started_at desc limit $1`,
+      [limit],
     );
     return result.rows.map((r) => ({
       id: r.id,

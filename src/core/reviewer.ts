@@ -1,5 +1,4 @@
 import type pg from "pg";
-import type { DomainConfig } from "../config/domains.js";
 import type { CapabilityRegistry } from "../domain/capabilityRegistry.js";
 import type { MemoryStore } from "../domain/memoryStore.js";
 import type { SecurityAccess } from "./security.js";
@@ -18,15 +17,14 @@ export interface Proposal {
 }
 
 /**
- * Runs on a schedule (see orchestrator/scheduler.ts), inspects this
- * domain's own registry health, memory quality, and error logs, and
- * produces proposals. Never applies anything itself — even auto-fix-tier
- * proposals are handed to SelfHeal to actually execute, so "the reviewer
- * finds problems, self-heal fixes them" stays a clean separation.
+ * Runs on a schedule (see orchestrator/scheduler.ts), inspects registry
+ * health, memory quality, and error logs, and produces proposals. Never
+ * applies anything itself — even auto-fix-tier proposals are handed to
+ * SelfHeal to actually execute, so "the reviewer finds problems, self-heal
+ * fixes them" stays a clean separation.
  */
 export class Reviewer {
   constructor(
-    private readonly config: DomainConfig,
     private readonly pool: pg.Pool,
     private readonly registry: CapabilityRegistry,
     private readonly memory: MemoryStore,
@@ -114,8 +112,8 @@ export class Reviewer {
 
   private async persist(proposal: Proposal): Promise<void> {
     await this.pool.query(
-      `insert into core.reviewer_proposals (domain, category, summary, trust_tier) values ($1, $2, $3, $4)`,
-      [this.config.id, proposal.category, proposal.summary, proposal.trustTier],
+      `insert into jarvis.reviewer_proposals (category, summary, trust_tier) values ($1, $2, $3)`,
+      [proposal.category, proposal.summary, proposal.trustTier],
     );
   }
 }

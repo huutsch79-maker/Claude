@@ -1,5 +1,4 @@
 import type pg from "pg";
-import type { DomainConfig } from "../config/domains.js";
 import type { EmbeddingProvider } from "./embeddingProvider.js";
 
 export interface MemoryItem {
@@ -14,22 +13,11 @@ export interface MemorySearchHit extends MemoryItem {
   distance: number;
 }
 
-/**
- * Vector similarity search over one domain's memory table only. The schema
- * name is baked in at construction time from that domain's own
- * DomainConfig — there is no method on this class that accepts a schema
- * name as a parameter, so it cannot be redirected at a call site.
- */
+/** Vector similarity search over the single unified memory table. */
 export class MemoryStore {
-  private readonly table: string;
+  private readonly table = "jarvis.memory";
 
-  constructor(
-    private readonly config: DomainConfig,
-    private readonly pool: pg.Pool,
-    private readonly embeddings: EmbeddingProvider,
-  ) {
-    this.table = `${this.config.schema}.memory`;
-  }
+  constructor(private readonly pool: pg.Pool, private readonly embeddings: EmbeddingProvider) {}
 
   async write(content: string, opts: { source?: string; metadata?: Record<string, unknown> } = {}): Promise<string> {
     const embedding = await this.embeddings.embed(content);
@@ -38,7 +26,7 @@ export class MemoryStore {
       [content, toVectorLiteral(embedding), opts.source ?? null, JSON.stringify(opts.metadata ?? {})],
     );
     const row = result.rows[0];
-    if (!row) throw new Error(`[${this.config.id}] memory write returned no row`);
+    if (!row) throw new Error("memory write returned no row");
     return row.id;
   }
 
@@ -68,7 +56,7 @@ export class MemoryStore {
     }));
   }
 
-  /** Used by Reviewer for memory-quality scans — counts only, no content leaves the domain. */
+  /** Used by Reviewer for memory-quality scans — counts only. */
   async countSince(since: Date): Promise<number> {
     const result = await this.pool.query<{ count: string }>(
       `select count(*)::text as count from ${this.table} where created_at >= $1`,

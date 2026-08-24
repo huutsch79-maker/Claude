@@ -3,91 +3,149 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>JARVIS v2 — Ops Dashboard</title>
+<title>JARVIS</title>
 <style>
   :root {
-    --bg: #0b0e14; --panel: #141922; --border: #262e3d; --text: #e6e9ef; --muted: #8b93a7;
-    --work: #4f8cff; --personal: #34c98f; --danger: #ff5c5c; --warn: #ffb454; --ok: #34c98f;
+    --bg: #0b0e14; --bg-elev: #10141c; --panel: #141922; --border: #232a37; --text: #e8ebf1; --muted: #8b93a7;
+    --accent: #5b8cff; --accent-soft: rgba(91,140,255,0.14);
+    --ok: #34c98f; --warn: #ffb454; --danger: #ff5c5c;
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-  header { padding: 16px 24px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
-  header h1 { font-size: 16px; margin: 0; font-weight: 600; letter-spacing: 0.02em; }
-  header .token-box { display: flex; gap: 8px; align-items: center; }
-  input[type="password"], input[type="text"] { background: var(--panel); border: 1px solid var(--border); color: var(--text); padding: 6px 8px; border-radius: 6px; font-size: 13px; }
-  button { background: var(--panel); border: 1px solid var(--border); color: var(--text); padding: 6px 10px; border-radius: 6px; font-size: 13px; cursor: pointer; }
-  button:hover { border-color: var(--muted); }
-  button.primary { background: var(--work); border-color: var(--work); color: #fff; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; overflow: hidden; }
+  #app { display: flex; height: 100vh; }
+
+  /* --- sidebar --- */
+  .sidebar { width: 320px; min-width: 320px; background: var(--bg-elev); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; }
+  .sidebar-header { padding: 18px 18px 12px; display: flex; align-items: center; justify-content: space-between; }
+  .sidebar-header h1 { font-size: 15px; margin: 0; font-weight: 700; letter-spacing: 0.01em; display: flex; align-items: center; gap: 8px; }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .status-dot.ok { background: var(--ok); box-shadow: 0 0 0 3px rgba(52,201,143,0.15); }
+  .status-dot.err { background: var(--danger); box-shadow: 0 0 0 3px rgba(255,92,92,0.15); }
+  .icon-btn { background: transparent; border: none; color: var(--muted); cursor: pointer; padding: 4px; border-radius: 6px; font-size: 16px; line-height: 1; }
+  .icon-btn:hover { background: var(--panel); color: var(--text); }
+
+  .section { padding: 10px 18px 16px; border-bottom: 1px solid var(--border); }
+  .section h2 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); margin: 0 0 10px; display: flex; align-items: center; justify-content: space-between; }
+  .count-badge { background: var(--accent-soft); color: var(--accent); border-radius: 10px; padding: 1px 7px; font-size: 11px; font-weight: 600; }
+
+  .item-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; padding: 7px 0; border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 13px; }
+  .item-row:last-child { border-bottom: none; }
+  .item-main { min-width: 0; }
+  .item-title { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item-sub { color: var(--muted); font-size: 11.5px; margin-top: 1px; }
+  .cat-chip { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 8px; background: rgba(255,255,255,0.06); color: var(--muted); margin-left: 6px; }
+
+  button { background: var(--panel); border: 1px solid var(--border); color: var(--text); padding: 5px 10px; border-radius: 7px; font-size: 12.5px; cursor: pointer; white-space: nowrap; }
+  button:hover { border-color: var(--accent); }
+  button:disabled { opacity: 0.5; cursor: default; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
   button.danger { background: transparent; border-color: var(--danger); color: var(--danger); }
-  main { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
-  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
-  .col { padding: 20px; border-right: 1px solid var(--border); }
-  .col:last-child { border-right: none; }
-  .col h2 { display: flex; align-items: center; gap: 8px; font-size: 15px; margin: 0 0 16px; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; }
-  .col.work .dot { background: var(--work); }
-  .col.personal .dot { background: var(--personal); }
-  section { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 14px; }
-  section h3 { margin: 0 0 10px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
-  .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); }
-  .row:last-child { border-bottom: none; }
-  .muted { color: var(--muted); }
-  .badge { font-size: 11px; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border); }
-  .badge.auto_fix { color: var(--ok); border-color: var(--ok); }
-  .badge.requires_approval { color: var(--warn); border-color: var(--warn); }
-  .badge.applied, .badge.approved { color: var(--ok); border-color: var(--ok); }
-  .badge.rejected, .badge.failed { color: var(--danger); border-color: var(--danger); }
-  .badge.pending, .badge.pending_approval { color: var(--warn); border-color: var(--warn); }
-  .empty { color: var(--muted); font-style: italic; padding: 8px 0; }
-  .actions { display: flex; gap: 6px; }
-  .actions button { font-size: 12px; padding: 4px 8px; }
-  #authGate { padding: 60px 24px; text-align: center; color: var(--muted); }
-  .chat-log { max-height: 340px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
-  .chat-msg { padding: 8px 10px; border-radius: 8px; font-size: 13px; white-space: pre-wrap; word-break: break-word; }
-  .chat-msg.user { background: rgba(255,255,255,0.06); align-self: flex-end; max-width: 85%; }
-  .chat-msg.assistant { background: rgba(79,140,255,0.12); align-self: flex-start; max-width: 85%; }
-  .chat-msg .tool-note { display: block; margin-top: 4px; font-size: 11px; color: var(--muted); }
-  .chat-input-row { display: flex; gap: 6px; }
-  .chat-input-row input[type="text"] { flex: 1; }
-  .chat-disabled { color: var(--muted); font-style: italic; }
+  button.tiny { padding: 3px 8px; font-size: 11.5px; }
+  .btn-row { display: flex; gap: 6px; flex-shrink: 0; }
+
+  .empty { color: var(--muted); font-style: italic; font-size: 12.5px; }
+  .badge { font-size: 10.5px; padding: 2px 7px; border-radius: 6px; border: 1px solid var(--border); }
+  .badge.auto_fix, .badge.applied, .badge.approved, .badge.valid { color: var(--ok); border-color: var(--ok); }
+  .badge.requires_approval, .badge.pending, .badge.pending_approval, .badge.expiring_soon { color: var(--warn); border-color: var(--warn); }
+  .badge.rejected, .badge.failed, .badge.expired, .badge.invalid { color: var(--danger); border-color: var(--danger); }
+
+  input[type="password"], input[type="text"] { background: var(--panel); border: 1px solid var(--border); color: var(--text); padding: 7px 10px; border-radius: 8px; font-size: 13px; width: 100%; }
+
+  /* --- main / chat --- */
+  .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .chat-log { flex: 1; overflow-y: auto; padding: 24px 0; display: flex; flex-direction: column; gap: 16px; }
+  .chat-log-inner { max-width: 760px; margin: 0 auto; width: 100%; padding: 0 24px; display: flex; flex-direction: column; gap: 16px; }
+  .chat-msg-row { display: flex; }
+  .chat-msg-row.user { justify-content: flex-end; }
+  .chat-msg { padding: 10px 14px; border-radius: 12px; font-size: 14px; white-space: pre-wrap; word-break: break-word; max-width: 85%; }
+  .chat-msg-row.user .chat-msg { background: var(--accent); color: #fff; border-bottom-right-radius: 3px; }
+  .chat-msg-row.assistant .chat-msg { background: var(--panel); border: 1px solid var(--border); border-bottom-left-radius: 3px; }
+  .tool-note { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .tool-note span { font-size: 10.5px; padding: 2px 7px; border-radius: 6px; background: rgba(255,255,255,0.05); color: var(--muted); }
+  .tool-note span.ok { color: var(--ok); }
+  .tool-note span.err { color: var(--danger); }
+
+  .attachment-chip { display: inline-flex; align-items: center; gap: 6px; background: rgba(255,255,255,0.06); border-radius: 8px; padding: 4px 8px; font-size: 11.5px; margin-top: 6px; }
+
+  .widget { margin-top: 10px; background: var(--bg-elev); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; max-width: 480px; }
+  .widget-title { font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .chart-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 12.5px; }
+  .chart-label { width: 100px; flex-shrink: 0; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chart-bar-track { flex: 1; background: rgba(255,255,255,0.06); border-radius: 4px; height: 16px; overflow: hidden; }
+  .chart-bar-fill { background: var(--accent); height: 100%; border-radius: 4px; }
+  .chart-value { width: 56px; text-align: right; flex-shrink: 0; color: var(--text); font-variant-numeric: tabular-nums; }
+  .widget-list-item { padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+  .widget-list-item:last-child { border-bottom: none; }
+  .widget-list-primary { font-size: 13px; }
+  .widget-list-secondary { font-size: 12px; color: var(--muted); }
+  .widget-list-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .widget img { max-width: 100%; border-radius: 8px; display: block; }
+  .widget-caption { font-size: 11.5px; color: var(--muted); margin-top: 6px; }
+
+  .composer { border-top: 1px solid var(--border); padding: 16px 24px 20px; }
+  .composer-inner { max-width: 760px; margin: 0 auto; }
+  .pending-attachments { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+  .pending-attachments .attachment-chip button { margin-left: 2px; }
+  .composer-row { display: flex; gap: 8px; align-items: flex-end; }
+  .composer-row input[type="text"] { flex: 1; }
+  .composer-row input[type="file"] { display: none; }
+
+  .connect-screen { flex: 1; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 14px; color: var(--muted); }
+  .connect-screen .box { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 24px; width: 320px; display: flex; flex-direction: column; gap: 10px; }
+  .connect-screen h2 { margin: 0; font-size: 15px; color: var(--text); }
+  .connect-error { color: var(--danger); font-size: 12.5px; }
+
+  @media (max-width: 800px) {
+    .sidebar { position: fixed; z-index: 10; height: 100vh; transform: translateX(-100%); transition: transform 0.15s ease; }
+    .sidebar.open { transform: translateX(0); }
+  }
 </style>
 </head>
 <body>
-<header>
-  <h1>JARVIS v2 — Ops Dashboard</h1>
-  <div class="token-box">
-    <input id="tokenInput" type="password" placeholder="dashboard token (if configured)" />
-    <button id="saveToken">Connect</button>
-    <button id="refreshAll">Refresh</button>
-  </div>
-</header>
+<div id="app" style="display:none">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <h1><span class="status-dot" id="statusDot"></span> JARVIS</h1>
+      <button class="icon-btn" id="settingsBtn" title="Connection settings">&#9881;</button>
+    </div>
+    <div id="sidebarSections"></div>
+  </aside>
+  <main class="main">
+    <div class="chat-log" id="chatLog"><div class="chat-log-inner" id="chatLogInner"></div></div>
+    <div class="composer">
+      <div class="composer-inner">
+        <div class="pending-attachments" id="pendingAttachments"></div>
+        <div class="composer-row">
+          <button class="icon-btn" id="attachBtn" title="Attach a file">&#128206;</button>
+          <input type="file" id="fileInput" accept="image/png,image/jpeg,image/gif,image/webp,application/pdf" />
+          <input type="text" id="messageInput" placeholder="Message JARVIS…" />
+          <button class="primary" id="sendBtn">Send</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
 
-<div id="authGate" style="display:none">Set a token above (or leave blank if JARVIS_DASHBOARD_TOKEN isn't configured) and click Connect.</div>
-
-<main id="main" style="display:none">
-  <div class="col work">
-    <h2><span class="dot"></span> Work (NZB)</h2>
-    <div class="content" data-domain="work"></div>
+<div class="connect-screen" id="connectScreen">
+  <div class="box">
+    <h2>Connect to JARVIS</h2>
+    <input id="tokenInput" type="password" placeholder="Dashboard token" />
+    <button class="primary" id="connectBtn">Connect</button>
+    <div class="connect-error" id="connectError"></div>
   </div>
-  <div class="col personal">
-    <h2><span class="dot"></span> Personal</h2>
-    <div class="content" data-domain="personal"></div>
-  </div>
-</main>
+</div>
 
 <script>
-const DOMAINS = ["work", "personal"];
 let TOKEN = localStorage.getItem("jarvis_dashboard_token") || "";
+let sessionId = localStorage.getItem("jarvis_chat_session") || crypto.randomUUID();
+localStorage.setItem("jarvis_chat_session", sessionId);
+let pendingAttachments = []; // { mediaType, base64Data, filename }
 
-function authHeaders() {
-  return TOKEN ? { "authorization": "Bearer " + TOKEN } : {};
-}
+function authHeaders() { return TOKEN ? { authorization: "Bearer " + TOKEN } : {}; }
 
 async function api(path, opts = {}) {
-  const res = await fetch(path, {
-    ...opts,
-    headers: { "content-type": "application/json", ...authHeaders(), ...(opts.headers || {}) },
-  });
+  const res = await fetch(path, { ...opts, headers: { "content-type": "application/json", ...authHeaders(), ...(opts.headers || {}) } });
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
   return res.status === 204 ? null : res.json();
 }
@@ -103,232 +161,288 @@ function el(tag, attrs = {}, children = []) {
   return node;
 }
 
-function badge(text, cls) {
-  return el("span", { class: "badge " + cls, text });
+function badge(text, cls) { return el("span", { class: "badge " + cls, text }); }
+
+// ---------- chat log persistence ----------
+function chatLog() { try { return JSON.parse(localStorage.getItem("jarvis_chat_log") || "[]"); } catch { return []; } }
+function saveChatLog(log) { localStorage.setItem("jarvis_chat_log", JSON.stringify(log.slice(-200))); }
+
+function renderChatMessage(msg) {
+  const row = el("div", { class: "chat-msg-row " + msg.role });
+  const bubble = el("div", { class: "chat-msg" });
+  if (msg.text) bubble.appendChild(document.createTextNode(msg.text));
+
+  for (const att of msg.attachments || []) {
+    bubble.appendChild(el("div", { class: "attachment-chip", text: "📎 " + (att.filename || att.mediaType) }));
+  }
+
+  if (msg.toolCalls && msg.toolCalls.length > 0) {
+    const note = el("div", { class: "tool-note" });
+    for (const t of msg.toolCalls) note.appendChild(el("span", { class: t.ok ? "ok" : "err", text: (t.ok ? "✓ " : "✗ ") + t.capability }));
+    bubble.appendChild(note);
+  }
+
+  for (const widget of msg.widgets || []) bubble.appendChild(renderWidget(widget));
+
+  row.appendChild(bubble);
+  return row;
 }
 
-async function renderHealth(container, domain, healthAll) {
-  const section = el("section");
-  section.appendChild(el("h3", { text: "Health" }));
-  const h = healthAll[domain];
-  if (!h) {
-    section.appendChild(el("div", { class: "empty", text: "no health report yet (waits for the first scheduler tick)" }));
+function renderWidget(widget) {
+  const box = el("div", { class: "widget" });
+  if (widget.type === "chart") {
+    box.appendChild(el("div", { class: "widget-title", text: widget.title || "Chart" }));
+    const max = Math.max(1, ...widget.series.map((s) => Number(s.value) || 0));
+    for (const point of widget.series) {
+      const pct = Math.max(2, (Number(point.value) || 0) / max * 100);
+      const row = el("div", { class: "chart-row" });
+      row.appendChild(el("div", { class: "chart-label", text: point.label }));
+      row.appendChild(el("div", { class: "chart-bar-track" }, [el("div", { class: "chart-bar-fill", style: `width:${pct}%` })]));
+      row.appendChild(el("div", { class: "chart-value", text: point.value + (widget.unit || "") }));
+      box.appendChild(row);
+    }
+  } else if (widget.type === "list") {
+    box.appendChild(el("div", { class: "widget-title", text: widget.title || "List" }));
+    for (const item of widget.items) {
+      const row = el("div", { class: "widget-list-item" });
+      row.appendChild(el("div", { class: "widget-list-primary", text: item.primary }));
+      if (item.secondary) row.appendChild(el("div", { class: "widget-list-secondary", text: item.secondary }));
+      if (item.meta) row.appendChild(el("div", { class: "widget-list-meta", text: item.meta }));
+      box.appendChild(row);
+    }
+  } else if (widget.type === "image") {
+    box.appendChild(el("img", { src: widget.url }));
+    if (widget.caption) box.appendChild(el("div", { class: "widget-caption", text: widget.caption }));
+  }
+  return box;
+}
+
+function renderChatLog() {
+  const inner = document.getElementById("chatLogInner");
+  inner.innerHTML = "";
+  for (const msg of chatLog()) inner.appendChild(renderChatMessage(msg));
+  document.getElementById("chatLog").scrollTop = 999999;
+}
+
+// ---------- attachments ----------
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(",")[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function renderPendingAttachments() {
+  const container = document.getElementById("pendingAttachments");
+  container.innerHTML = "";
+  pendingAttachments.forEach((att, i) => {
+    const chip = el("span", { class: "attachment-chip" }, [
+      document.createTextNode("📎 " + (att.filename || att.mediaType)),
+      el("button", { class: "tiny", text: "×", onclick: () => { pendingAttachments.splice(i, 1); renderPendingAttachments(); } }),
+    ]);
+    container.appendChild(chip);
+  });
+}
+
+document.getElementById("attachBtn").addEventListener("click", () => document.getElementById("fileInput").click());
+document.getElementById("fileInput").addEventListener("change", async (e) => {
+  for (const file of e.target.files) {
+    const base64Data = await fileToBase64(file);
+    pendingAttachments.push({ mediaType: file.type, base64Data, filename: file.name });
+  }
+  e.target.value = "";
+  renderPendingAttachments();
+});
+
+// ---------- send ----------
+async function sendMessage() {
+  const input = document.getElementById("messageInput");
+  const text = input.value.trim();
+  if (!text && pendingAttachments.length === 0) return;
+  input.value = "";
+  const sendBtn = document.getElementById("sendBtn");
+  sendBtn.disabled = true;
+
+  const log = chatLog();
+  log.push({ role: "user", text, attachments: pendingAttachments.map((a) => ({ mediaType: a.mediaType, filename: a.filename })) });
+  saveChatLog(log);
+  renderChatLog();
+
+  const attachmentsToSend = pendingAttachments;
+  pendingAttachments = [];
+  renderPendingAttachments();
+
+  try {
+    const result = await api("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ sessionId, message: text, attachments: attachmentsToSend }),
+    });
+    const withReply = chatLog();
+    withReply.push({ role: "assistant", text: result.reply, toolCalls: result.toolCalls, widgets: result.widgets });
+    saveChatLog(withReply);
+  } catch (e) {
+    const withError = chatLog();
+    withError.push({ role: "assistant", text: "(error: " + e.message + ")" });
+    saveChatLog(withError);
+  }
+  sendBtn.disabled = false;
+  renderChatLog();
+}
+document.getElementById("sendBtn").addEventListener("click", sendMessage);
+document.getElementById("messageInput").addEventListener("keydown", (e) => { if (e.key === "Enter") sendMessage(); });
+
+// ---------- sidebar ----------
+async function renderSidebar() {
+  const container = document.getElementById("sidebarSections");
+  container.innerHTML = "";
+
+  // health
+  const health = await api("/api/health").catch(() => null);
+  const healthSection = el("div", { class: "section" });
+  healthSection.appendChild(el("h2", { text: "Health" }));
+  document.getElementById("statusDot").className = "status-dot " + (health ? "ok" : "err");
+  if (!health) {
+    healthSection.appendChild(el("div", { class: "empty", text: "no health report yet" }));
   } else {
-    section.appendChild(el("div", { class: "row" }, [
-      el("span", { text: "last reported" }),
-      el("span", { class: "muted", text: new Date(h.reportedAt).toLocaleString() }),
+    healthSection.appendChild(el("div", { class: "item-row" }, [
+      el("div", { class: "item-sub", text: "last reported" }),
+      el("div", { class: "item-sub", text: new Date(health.reportedAt).toLocaleTimeString() }),
     ]));
-    section.appendChild(el("div", { class: "row" }, [
-      el("span", { text: "errors (24h)" }),
-      el("span", { class: "muted", text: h.errorCounts.fatal24h + " fatal / " + h.errorCounts.transient24h + " transient" }),
-    ]));
-    for (const c of h.credentialStatus) {
-      section.appendChild(el("div", { class: "row" }, [
-        el("span", { text: c.credentialRef }),
-        badge(c.status, c.status === "valid" ? "auto_fix" : c.status === "expiring_soon" ? "requires_approval" : "rejected"),
+    for (const c of health.credentialStatus) {
+      healthSection.appendChild(el("div", { class: "item-row" }, [
+        el("div", { class: "item-title", text: c.credentialRef }),
+        badge(c.status, c.status === "valid" ? "valid" : c.status === "expiring_soon" ? "expiring_soon" : "invalid"),
       ]));
     }
   }
-  container.appendChild(section);
-}
+  container.appendChild(healthSection);
 
-async function renderProposals(container, domain) {
-  const section = el("section");
-  section.appendChild(el("h3", { text: "Reviewer proposals (pending)" }));
-  const proposals = await api(`/api/domains/${domain}/proposals?status=pending`);
-  if (proposals.length === 0) section.appendChild(el("div", { class: "empty", text: "none pending" }));
+  // proposals
+  const proposals = await api("/api/proposals?status=pending").catch(() => []);
+  const propSection = el("div", { class: "section" });
+  propSection.appendChild(el("h2", {}, [document.createTextNode("Proposals"), proposals.length ? el("span", { class: "count-badge", text: String(proposals.length) }) : document.createTextNode("")]));
+  if (proposals.length === 0) propSection.appendChild(el("div", { class: "empty", text: "none pending" }));
   for (const p of proposals) {
-    const row = el("div", { class: "row" });
-    row.appendChild(el("div", {}, [
-      el("div", { text: p.summary }),
-      el("div", { class: "muted", text: p.category + " · " + new Date(p.createdAt).toLocaleString() }),
+    const row = el("div", { class: "item-row" });
+    row.appendChild(el("div", { class: "item-main" }, [
+      el("div", { class: "item-title", text: p.summary }),
+      el("div", { class: "item-sub", text: p.category }),
     ]));
-    const actions = el("div", { class: "actions" }, [
-      el("button", { text: "Acknowledge", onclick: async () => { await api(`/api/domains/${domain}/proposals/${p.id}/approve`, { method: "POST" }); renderAll(); } }),
-      el("button", { class: "danger", text: "Dismiss", onclick: async () => { await api(`/api/domains/${domain}/proposals/${p.id}/reject`, { method: "POST" }); renderAll(); } }),
-    ]);
-    row.appendChild(actions);
-    section.appendChild(row);
+    row.appendChild(el("div", { class: "btn-row" }, [
+      el("button", { class: "tiny", text: "Ack", onclick: async () => { await api(`/api/proposals/${p.id}/approve`, { method: "POST" }); renderSidebar(); } }),
+      el("button", { class: "tiny danger", text: "Dismiss", onclick: async () => { await api(`/api/proposals/${p.id}/reject`, { method: "POST" }); renderSidebar(); } }),
+    ]));
+    propSection.appendChild(row);
   }
-  container.appendChild(section);
-}
+  container.appendChild(propSection);
 
-async function renderScripts(container, domain) {
-  const section = el("section");
-  section.appendChild(el("h3", { text: "Scripts" }));
-  const scripts = await api("/api/scripts");
+  // scripts
+  const scripts = await api("/api/scripts").catch(() => []);
+  const scriptSection = el("div", { class: "section" });
+  scriptSection.appendChild(el("h2", { text: "Scripts" }));
   for (const s of scripts) {
-    const row = el("div", { class: "row" });
-    row.appendChild(el("div", {}, [
-      el("div", { text: s.name }),
-      el("div", { class: "muted", text: s.description }),
+    const row = el("div", { class: "item-row" });
+    row.appendChild(el("div", { class: "item-main" }, [
+      el("div", { class: "item-title", text: s.name }),
+      el("div", { class: "item-sub", text: s.description }),
     ]));
-    const right = el("div", { class: "actions" });
+    const right = el("div", { class: "btn-row" });
     right.appendChild(badge(s.trustTier, s.trustTier));
     right.appendChild(el("button", {
+      class: "tiny",
       text: "Run",
       onclick: async () => {
         let args = {};
         if (s.name === "apply-migration") {
-          const file = prompt("migration filename (must exist in db/migrations/" + domain + "/):");
+          const file = prompt("migration filename (must exist in db/migrations/):");
           if (!file) return;
           args = { file };
         }
         try {
-          const result = await api(`/api/domains/${domain}/scripts/${s.name}/run`, { method: "POST", body: JSON.stringify({ args }) });
-          alert(result.status === "pending_approval" ? "Proposed — needs approval (see Script runs below)." : "Applied.");
-          renderAll();
+          const result = await api(`/api/scripts/${s.name}/run`, { method: "POST", body: JSON.stringify({ args }) });
+          alert(result.status === "pending_approval" ? "Proposed — needs approval below." : "Applied.");
+          renderSidebar();
         } catch (e) { alert("Failed: " + e.message); }
       },
     }));
     row.appendChild(right);
-    section.appendChild(row);
+    scriptSection.appendChild(row);
   }
-  container.appendChild(section);
-}
-
-async function renderScriptRuns(container, domain) {
-  const section = el("section");
-  section.appendChild(el("h3", { text: "Script run history" }));
-  const runs = await api(`/api/domains/${domain}/script-runs`);
-  if (runs.length === 0) section.appendChild(el("div", { class: "empty", text: "no runs yet" }));
-  for (const r of runs.slice(0, 15)) {
-    const row = el("div", { class: "row" });
-    row.appendChild(el("div", {}, [
-      el("div", { text: r.scriptName }),
-      el("div", { class: "muted", text: (r.detail || "") + " · " + new Date(r.startedAt).toLocaleString() }),
+  const runs = await api("/api/script-runs").catch(() => []);
+  const pendingRuns = runs.filter((r) => r.status === "pending_approval");
+  for (const r of pendingRuns) {
+    const row = el("div", { class: "item-row" });
+    row.appendChild(el("div", { class: "item-main" }, [el("div", { class: "item-title", text: r.scriptName }), el("div", { class: "item-sub", text: r.detail || "" })]));
+    row.appendChild(el("div", { class: "btn-row" }, [
+      el("button", { class: "tiny", text: "Approve", onclick: async () => { await api(`/api/scripts/${r.id}/approve`, { method: "POST" }); renderSidebar(); } }),
+      el("button", { class: "tiny danger", text: "Reject", onclick: async () => { await api(`/api/scripts/${r.id}/reject`, { method: "POST" }); renderSidebar(); } }),
     ]));
-    const right = el("div", { class: "actions" });
-    right.appendChild(badge(r.status, r.status));
-    if (r.status === "pending_approval") {
-      right.appendChild(el("button", { text: "Approve", onclick: async () => { await api(`/api/domains/${domain}/scripts/${r.id}/approve`, { method: "POST" }); renderAll(); } }));
-      right.appendChild(el("button", { class: "danger", text: "Reject", onclick: async () => { await api(`/api/domains/${domain}/scripts/${r.id}/reject`, { method: "POST" }); renderAll(); } }));
-    }
-    row.appendChild(right);
-    section.appendChild(row);
+    scriptSection.appendChild(row);
   }
-  container.appendChild(section);
-}
+  container.appendChild(scriptSection);
 
-async function renderCapabilities(container, domain) {
-  const section = el("section");
-  section.appendChild(el("h3", { text: "Capabilities" }));
-  const caps = await api(`/api/domains/${domain}/capabilities`);
+  // capabilities, grouped by freeform category
+  const caps = await api("/api/capabilities").catch(() => []);
+  const byCategory = new Map();
   for (const c of caps) {
-    const row = el("div", { class: "row" });
-    row.appendChild(el("div", {}, [
-      el("div", { text: c.name }),
-      el("div", { class: "muted", text: "priority " + c.priority + (c.credentialRef ? " · cred: " + c.credentialRef : "") }),
-    ]));
-    row.appendChild(el("button", {
-      text: c.enabled ? "Disable" : "Enable",
-      onclick: async () => { await api(`/api/domains/${domain}/capabilities/${c.name}/enabled`, { method: "POST", body: JSON.stringify({ enabled: !c.enabled }) }); renderAll(); },
-    }));
-    section.appendChild(row);
+    const key = c.category || "uncategorized";
+    if (!byCategory.has(key)) byCategory.set(key, []);
+    byCategory.get(key).push(c);
   }
-  container.appendChild(section);
-}
-
-function chatSessionId(domain) {
-  const key = "jarvis_chat_session_" + domain;
-  let id = localStorage.getItem(key);
-  if (!id) { id = crypto.randomUUID(); localStorage.setItem(key, id); }
-  return id;
-}
-
-function chatLog(domain) {
-  try { return JSON.parse(localStorage.getItem("jarvis_chat_log_" + domain) || "[]"); }
-  catch { return []; }
-}
-
-function saveChatLog(domain, log) {
-  localStorage.setItem("jarvis_chat_log_" + domain, JSON.stringify(log.slice(-100)));
-}
-
-function renderChat(container, domain) {
-  const section = el("section");
-  section.appendChild(el("h3", { text: "Chat" }));
-
-  const log = chatLog(domain);
-  const logEl = el("div", { class: "chat-log" });
-  for (const msg of log) {
-    const bubble = el("div", { class: "chat-msg " + msg.role, text: msg.text });
-    if (msg.toolCalls && msg.toolCalls.length > 0) {
-      bubble.appendChild(el("span", {
-        class: "tool-note",
-        text: msg.toolCalls.map((t) => (t.ok ? "✓ " : "✗ ") + t.capability).join("  "),
+  const capSection = el("div", { class: "section" });
+  capSection.appendChild(el("h2", { text: "Capabilities" }));
+  if (caps.length === 0) capSection.appendChild(el("div", { class: "empty", text: "none registered" }));
+  for (const [category, items] of byCategory) {
+    for (const c of items) {
+      const row = el("div", { class: "item-row" });
+      row.appendChild(el("div", { class: "item-main" }, [
+        el("div", { class: "item-title" }, [document.createTextNode(c.name), el("span", { class: "cat-chip", text: category })]),
+        el("div", { class: "item-sub", text: c.credentialRef ? "cred: " + c.credentialRef : "" }),
+      ]));
+      row.appendChild(el("button", {
+        class: "tiny",
+        text: c.enabled ? "Disable" : "Enable",
+        onclick: async () => { await api(`/api/capabilities/${c.name}/enabled`, { method: "POST", body: JSON.stringify({ enabled: !c.enabled }) }); renderSidebar(); },
       }));
+      capSection.appendChild(row);
     }
-    logEl.appendChild(bubble);
   }
-  section.appendChild(logEl);
-
-  const input = el("input", { type: "text", placeholder: "Message JARVIS (" + domain + ")…" });
-  const sendButton = el("button", { class: "primary", text: "Send" });
-  const send = async () => {
-    const text = input.value.trim();
-    if (!text) return;
-    input.value = "";
-    sendButton.setAttribute("disabled", "true");
-    const current = chatLog(domain);
-    current.push({ role: "user", text });
-    saveChatLog(domain, current);
-    logEl.appendChild(el("div", { class: "chat-msg user", text }));
-    logEl.scrollTop = logEl.scrollHeight;
-    try {
-      const result = await api(`/api/domains/${domain}/chat`, {
-        method: "POST",
-        body: JSON.stringify({ sessionId: chatSessionId(domain), message: text }),
-      });
-      const withReply = chatLog(domain);
-      withReply.push({ role: "assistant", text: result.reply, toolCalls: result.toolCalls });
-      saveChatLog(domain, withReply);
-    } catch (e) {
-      const withError = chatLog(domain);
-      withError.push({ role: "assistant", text: "(error: " + e.message + ")" });
-      saveChatLog(domain, withError);
-    }
-    sendButton.removeAttribute("disabled");
-    renderAll();
-  };
-  sendButton.addEventListener("click", send);
-  input.addEventListener("keydown", (e) => { if (e.key === "Enter") send(); });
-
-  section.appendChild(el("div", { class: "chat-input-row" }, [input, sendButton]));
-  container.appendChild(section);
+  container.appendChild(capSection);
 }
 
-async function renderAll() {
-  const healthAll = await api("/api/health");
-  for (const domain of DOMAINS) {
-    const container = document.querySelector(`.content[data-domain="${domain}"]`);
-    container.innerHTML = "";
-    renderChat(container, domain);
-    await renderHealth(container, domain, healthAll);
-    await renderProposals(container, domain);
-    await renderScripts(container, domain);
-    await renderScriptRuns(container, domain);
-    await renderCapabilities(container, domain);
-  }
-}
-
-document.getElementById("saveToken").addEventListener("click", async () => {
-  TOKEN = document.getElementById("tokenInput").value.trim();
-  localStorage.setItem("jarvis_dashboard_token", TOKEN);
+// ---------- connect flow ----------
+async function tryConnect() {
   try {
     await api("/api/health");
-    document.getElementById("authGate").style.display = "none";
-    document.getElementById("main").style.display = "grid";
-    renderAll();
+    document.getElementById("connectScreen").style.display = "none";
+    document.getElementById("app").style.display = "flex";
+    renderChatLog();
+    await renderSidebar();
+    setInterval(renderSidebar, 30000);
+    return true;
   } catch (e) {
-    document.getElementById("authGate").style.display = "block";
-    document.getElementById("authGate").textContent = "Connection failed: " + e.message;
+    document.getElementById("connectScreen").style.display = "flex";
+    document.getElementById("app").style.display = "none";
+    document.getElementById("connectError").textContent = e.message === "unauthorized" ? "Invalid token." : e.message;
+    return false;
   }
-});
-document.getElementById("refreshAll").addEventListener("click", renderAll);
+}
 
+document.getElementById("connectBtn").addEventListener("click", async () => {
+  TOKEN = document.getElementById("tokenInput").value.trim();
+  localStorage.setItem("jarvis_dashboard_token", TOKEN);
+  await tryConnect();
+});
+document.getElementById("settingsBtn").addEventListener("click", () => {
+  document.getElementById("connectScreen").style.display = "flex";
+  document.getElementById("app").style.display = "none";
+  document.getElementById("tokenInput").value = TOKEN;
+});
 document.getElementById("tokenInput").value = TOKEN;
-document.getElementById("saveToken").click();
+
+tryConnect();
 </script>
 </body>
 </html>

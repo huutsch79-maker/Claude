@@ -1,4 +1,3 @@
-import type { DomainConfig } from "../config/domains.js";
 import type { CredentialStore } from "../domain/credentialStore.js";
 import type { CapabilityRegistry } from "../domain/capabilityRegistry.js";
 import type { CredentialStatusSummary } from "../orchestrator/operationalMetadata.js";
@@ -8,15 +7,9 @@ export interface AccessAuditFinding {
   issue: "unused_by_any_enabled_capability" | "referenced_but_missing" | "expiring_soon" | "expired";
 }
 
-/**
- * Audits credential validity and access patterns for exactly one domain.
- * Constructed with that domain's own CredentialStore and CapabilityRegistry
- * — there is no parameter anywhere that lets it reach into another
- * domain's store.
- */
+/** Audits credential validity and access patterns across all capabilities. */
 export class SecurityAccess {
   constructor(
-    private readonly config: DomainConfig,
     private readonly credentials: CredentialStore,
     private readonly registry: CapabilityRegistry,
   ) {}

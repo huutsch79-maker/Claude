@@ -1,8 +1,5 @@
-import type { DomainConfig } from "../config/domains.js";
-
 export interface ApprovalRequest {
-  domain: string;
-  summary: string; // operational description only — no domain content
+  summary: string; // operational description only
   kind: string;
   /** Present only for kind === "run_script" — what to actually execute once approved. */
   scriptName?: string;
@@ -20,13 +17,13 @@ export interface ApprovalNotifier {
 }
 
 export class PushoverApprovalNotifier implements ApprovalNotifier {
-  constructor(private readonly config: DomainConfig, private readonly env: NodeJS.ProcessEnv = process.env) {}
+  constructor(private readonly env: NodeJS.ProcessEnv = process.env) {}
 
   async notify(request: ApprovalRequest): Promise<void> {
-    const token = this.env[`${this.config.credentialEnvPrefix}PUSHOVER_TOKEN`];
-    const user = this.env[`${this.config.credentialEnvPrefix}PUSHOVER_USER`];
+    const token = this.env.JARVIS_PUSHOVER_TOKEN;
+    const user = this.env.JARVIS_PUSHOVER_USER;
     if (!token || !user) {
-      console.log(`[${this.config.id}] (pushover not configured) approval needed: ${request.kind} — ${request.summary}`);
+      console.log(`(pushover not configured) approval needed: ${request.kind} — ${request.summary}`);
       return;
     }
     await fetch("https://api.pushover.net/1/messages.json", {
@@ -35,7 +32,7 @@ export class PushoverApprovalNotifier implements ApprovalNotifier {
       body: JSON.stringify({
         token,
         user,
-        title: `JARVIS approval needed: ${this.config.label}`,
+        title: "JARVIS approval needed",
         message: `${request.kind}: ${request.summary}`,
       }),
     });
@@ -50,10 +47,11 @@ export class PushoverApprovalNotifier implements ApprovalNotifier {
  *
  * Known v1 limitation: pending approvals live only in this process's
  * memory, not in the database. An orchestrator restart loses the ability
- * to approve anything proposed before the restart (core.script_runs still
- * shows it as "pending_approval" for visibility, but re-approving it would
- * need re-proposing). Acceptable for a single self-hosted instance; would
- * need a durable queue before this ever runs as more than one process.
+ * to approve anything proposed before the restart (jarvis.script_runs
+ * still shows it as "pending_approval" for visibility, but re-approving
+ * it would need re-proposing). Acceptable for a single self-hosted
+ * instance; would need a durable queue before this ever runs as more than
+ * one process.
  */
 export class ApprovalGate {
   private readonly pending = new Map<string, ApprovalRequest>();

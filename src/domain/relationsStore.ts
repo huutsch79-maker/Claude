@@ -1,5 +1,4 @@
 import type pg from "pg";
-import type { DomainConfig } from "../config/domains.js";
 
 export type RelationConfidence = "EXTRACTED" | "INFERRED" | "AMBIGUOUS";
 
@@ -12,19 +11,16 @@ export interface RelationWrite {
 }
 
 /**
- * Typed edges between memory items, scoped to one domain's schema.
- *
- * Deliberately exposes only `writeBatch` — there is no single-item "write
- * this relation right now" method, because the spec rules out mid-
- * conversation live relation computation for v1. Relations get written
- * after an interaction or on a scheduled pass, always as a batch.
+ * Typed edges between memory items. Deliberately exposes only
+ * `writeBatch` — there is no single-item "write this relation right now"
+ * method, because the spec rules out mid-conversation live relation
+ * computation. Relations get written after an interaction or on a
+ * scheduled pass, always as a batch.
  */
 export class RelationsStore {
-  private readonly table: string;
+  private readonly table = "jarvis.relations";
 
-  constructor(private readonly config: DomainConfig, private readonly pool: pg.Pool) {
-    this.table = `${this.config.schema}.relations`;
-  }
+  constructor(private readonly pool: pg.Pool) {}
 
   async writeBatch(relations: RelationWrite[]): Promise<void> {
     if (relations.length === 0) return;

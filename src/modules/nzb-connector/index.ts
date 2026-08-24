@@ -1,4 +1,4 @@
-import type { CapabilityContext, CapabilityModule } from "../../../domain/capabilityRegistry.js";
+import type { CapabilityContext, CapabilityModule } from "../../domain/capabilityRegistry.js";
 
 export interface NzbRequest {
   intent: "m365.mail.search" | "dynamics.record.lookup";
@@ -6,11 +6,9 @@ export interface NzbRequest {
 }
 
 /**
- * Work-domain dynamic module: NZB's M365/Dynamics BC connector. The one
- * real work-domain connector recommended to build first (see CLAUDE.md).
- * Structurally near-identical to the personal Hotmail module — that's
- * intentional, it's the same dynamic-module pattern applied to a
- * different domain's own credential/tenant, never sharing either.
+ * NZB's M365/Dynamics BC connector. One of the two starter connectors,
+ * alongside the Hotmail module — structurally near-identical, applying
+ * the same dynamic-module pattern to a different tenant/credential.
  */
 const nzbConnectorModule: CapabilityModule = {
   canHandle(request: unknown): boolean {
@@ -22,7 +20,7 @@ const nzbConnectorModule: CapabilityModule = {
     const req = request as NzbRequest;
     if (!ctx.credential) {
       throw new Error(
-        "nzb-m365-connector: no credential configured. Set JARVIS_WORK_NZB_M365_OAUTH " +
+        "nzb-m365-connector: no credential configured. Set JARVIS_CRED_NZB_M365_OAUTH " +
           "(NZB tenant app registration) before using this capability.",
       );
     }
@@ -38,7 +36,7 @@ const nzbConnectorModule: CapabilityModule = {
     }
 
     // dynamics.record.lookup
-    const dynamicsBase = process.env.JARVIS_WORK_DYNAMICS_BASE_URL ?? "https://api.businesscentral.dynamics.com/v2.0";
+    const dynamicsBase = process.env.JARVIS_NZB_DYNAMICS_BASE_URL ?? "https://api.businesscentral.dynamics.com/v2.0";
     const recordId = String(req.payload.id ?? "");
     const response = await fetch(`${dynamicsBase}/records/${encodeURIComponent(recordId)}`, {
       headers: { authorization: `Bearer ${ctx.credential.value}` },

@@ -1,11 +1,12 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type pg from "pg";
-import type { DomainConfig } from "../config/domains.js";
 
 export interface CapabilityRow {
   id: string;
   name: string;
+  /** Freeform UI label ('work', 'personal', anything) — grouping only, never an access boundary. */
+  category: string | null;
   enabled: boolean;
   priority: number;
   schemaDef: Record<string, unknown>;
@@ -14,18 +15,18 @@ export interface CapabilityRow {
   modelOverride: string | null;
   credentialRef: string | null;
   /**
-   * A logical id under src/modules/, e.g. "personal/hotmail" — NOT a
-   * filesystem path. Resolved to an actual import path at load time (see
-   * loadModule below) because a fixed path can't be correct in both dev
-   * (tsx running src/**\/*.ts directly) and the built container (node
-   * running dist/src/**\/*.js) — same class of bug fixed in
-   * scriptRegistry.ts's migrations path.
+   * A logical id under src/modules/, e.g. "hotmail" — NOT a filesystem
+   * path. Resolved to an actual import path at load time (see loadModule
+   * below) because a fixed path can't be correct in both dev (tsx running
+   * src/**\/*.ts directly) and the built container (node running
+   * dist/src/**\/*.js) — same class of bug fixed in scriptRegistry.ts's
+   * migrations path.
    */
   modulePath: string;
 }
 
 export interface CapabilityContext {
-  /** The credential this capability's registry row points to, resolved just-in-time. Never a raw domain object. */
+  /** The credential this capability's registry row points to, resolved just-in-time. */
   credential: { ref: string; value: string; expiresAt: string | null } | null;
 }
 
@@ -40,17 +41,15 @@ export type ConflictResolution =
   | { kind: "ask_user"; tied: CapabilityRow[] };
 
 /**
- * Per-domain registry of dynamic modules. Adding/removing a module is a row
+ * Registry of dynamic modules. Adding/removing a module is a row
  * insert/delete here, never a code change — see CLAUDE.md's two-tier
- * architecture. Removing a row does not touch that domain's memory, since
- * memory is not owned per-module.
+ * architecture. Removing a row does not touch memory, since memory is not
+ * owned per-module.
  */
 export class CapabilityRegistry {
-  private readonly table: string;
+  private readonly table = "jarvis.capabilities";
 
-  constructor(private readonly config: DomainConfig, private readonly pool: pg.Pool) {
-    this.table = `${this.config.schema}.capabilities`;
-  }
+  constructor(private readonly pool: pg.Pool) {}
 
   async list(opts: { enabledOnly?: boolean } = {}): Promise<CapabilityRow[]> {
     const where = opts.enabledOnly ? "where enabled = true" : "";
@@ -82,7 +81,7 @@ export class CapabilityRegistry {
     const mod = (await import(importPath)) as { default?: CapabilityModule } & Partial<CapabilityModule>;
     const impl = mod.default ?? mod;
     if (!impl || typeof impl.handle !== "function" || typeof impl.canHandle !== "function") {
-      throw new Error(`[${this.config.id}] module "${row.modulePath}" (${importPath}) does not implement CapabilityModule`);
+      throw new Error(`module "${row.modulePath}" (${importPath}) does not implement CapabilityModule`);
     }
     return impl as CapabilityModule;
   }
@@ -95,7 +94,7 @@ const runningCompiled = fileURLToPath(import.meta.url).split(path.sep).includes(
 
 function resolveModuleImportPath(logicalId: string): string {
   if (logicalId.includes("..") || path.isAbsolute(logicalId)) {
-    throw new Error(`capability module id "${logicalId}" must be a relative "domain/name" id, not a path`);
+    throw new Error(`capability module id "${logicalId}" must be a relative name, not a path`);
   }
   const root = runningCompiled
     ? path.join(process.cwd(), "dist/src/modules")
@@ -108,6 +107,7 @@ function rowToCapability(row: Record<string, unknown>): CapabilityRow {
   return {
     id: row.id as string,
     name: row.name as string,
+    category: (row.category as string | null) ?? null,
     enabled: row.enabled as boolean,
     priority: row.priority as number,
     schemaDef: (row.schema_def as Record<string, unknown>) ?? {},

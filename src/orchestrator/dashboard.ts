@@ -1,24 +1,22 @@
 import { createServer, type Server } from "node:http";
 import path from "node:path";
 import express, { type NextFunction, type Request, type Response } from "express";
-import { isDomainId } from "../config/domains.js";
 import { listScripts } from "../core/scriptRegistry.js";
-import type { DomainManager } from "./domainManager.js";
+import type { ChatAttachment } from "../chat/chatService.js";
+import type { Orchestrator } from "./orchestrator.js";
 
 /**
- * Ops dashboard: read-only visibility into operational metadata (health,
- * pending reviewer proposals, script run history, capability registry
- * listing) plus the approve/reject/run actions that were previously only
- * reachable by editing the database or waiting for Pushover. This is core
- * layer code — every route below reads only from OperationalBus, the
- * shared `core` tables, or capability *metadata* (name/enabled/priority/
- * credential ref — never a credential value, never memory or relations
- * content). If a future route ever needs to touch `.memory` or
- * `.relations`, that's a domain-boundary violation and shouldn't ship.
+ * Ops dashboard: chat, plus read-only visibility into operational metadata
+ * (health, pending reviewer proposals, script run history, capability
+ * registry listing) and the approve/reject/run actions that were
+ * previously only reachable by editing the database or waiting for
+ * Pushover. Every non-chat route below reads only from OperationalBus, the
+ * jarvis.reviewer_proposals/script_runs tables, or capability *metadata*
+ * (name/enabled/priority/credential ref — never a credential value).
  */
-export function createDashboardServer(domainManager: DomainManager): Server {
+export function createDashboardServer(orchestrator: Orchestrator): Server {
   const app = express();
-  app.use(express.json());
+  app.use(express.json({ limit: "15mb" })); // headroom for base64 image/PDF chat attachments
   app.use(express.static(path.join(process.cwd(), "public")));
 
   const token = process.env.JARVIS_DASHBOARD_TOKEN;
@@ -36,75 +34,61 @@ export function createDashboardServer(domainManager: DomainManager): Server {
     res.status(401).json({ error: "unauthorized" });
   });
 
-  const domainParam = (req: Request, res: Response, next: NextFunction) => {
-    if (!isDomainId(req.params.domain ?? "")) {
-      res.status(404).json({ error: `unknown domain "${req.params.domain}"` });
-      return;
-    }
-    next();
-  };
+  const jarvis = orchestrator.jarvis;
 
   app.get("/api/health", (_req, res) => {
-    const snapshot = domainManager.bus.snapshot();
-    res.json(Object.fromEntries(snapshot));
+    res.json(orchestrator.bus.snapshot());
   });
 
   app.get("/api/scripts", (_req, res) => {
     res.json(listScripts().map((s) => ({ name: s.name, description: s.description, trustTier: s.trustTier })));
   });
 
-  app.get("/api/domains/:domain/proposals", domainParam, async (req, res) => {
-    const domain = domainManager.get(req.params.domain as never);
+  app.get("/api/proposals", async (req, res) => {
     const status = req.query.status as "pending" | "approved" | "rejected" | "applied" | undefined;
-    res.json(await domain.ops.listReviewerProposals(status));
+    res.json(await jarvis.ops.listReviewerProposals(status));
   });
 
-  app.post("/api/domains/:domain/proposals/:id/approve", domainParam, async (req, res) => {
-    const domain = domainManager.get(req.params.domain as never);
-    const ok = await domain.ops.setReviewerProposalStatus(req.params.id!, "approved");
+  app.post("/api/proposals/:id/approve", async (req, res) => {
+    const ok = await jarvis.ops.setReviewerProposalStatus(req.params.id!, "approved");
     res.status(ok ? 200 : 404).json({ ok });
   });
 
-  app.post("/api/domains/:domain/proposals/:id/reject", domainParam, async (req, res) => {
-    const domain = domainManager.get(req.params.domain as never);
-    const ok = await domain.ops.setReviewerProposalStatus(req.params.id!, "rejected");
+  app.post("/api/proposals/:id/reject", async (req, res) => {
+    const ok = await jarvis.ops.setReviewerProposalStatus(req.params.id!, "rejected");
     res.status(ok ? 200 : 404).json({ ok });
   });
 
-  app.get("/api/domains/:domain/script-runs", domainParam, async (req, res) => {
-    const domain = domainManager.get(req.params.domain as never);
-    res.json(await domain.ops.listScriptRuns());
+  app.get("/api/script-runs", async (_req, res) => {
+    res.json(await jarvis.ops.listScriptRuns());
   });
 
-  app.post("/api/domains/:domain/scripts/:name/run", domainParam, async (req, res) => {
-    const domain = domainManager.get(req.params.domain as never);
+  app.post("/api/scripts/:name/run", async (req, res) => {
     const args = (req.body?.args ?? {}) as Record<string, string>;
     try {
-      const result = await domain.selfHeal.runScript(req.params.name!, args);
+      const result = await jarvis.selfHeal.runScript(req.params.name!, args);
       res.json(result);
     } catch (err) {
       res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
     }
   });
 
-  app.post("/api/domains/:domain/scripts/:id/approve", domainParam, async (req, res) => {
-    const domain = domainManager.get(req.params.domain as never);
-    const ok = await domain.selfHeal.approveScript(req.params.id!);
+  app.post("/api/scripts/:id/approve", async (req, res) => {
+    const ok = await jarvis.selfHeal.approveScript(req.params.id!);
     res.status(ok ? 200 : 404).json({ ok });
   });
 
-  app.post("/api/domains/:domain/scripts/:id/reject", domainParam, async (req, res) => {
-    const domain = domainManager.get(req.params.domain as never);
-    const ok = await domain.selfHeal.rejectScript(req.params.id!);
+  app.post("/api/scripts/:id/reject", async (req, res) => {
+    const ok = await jarvis.selfHeal.rejectScript(req.params.id!);
     res.status(ok ? 200 : 404).json({ ok });
   });
 
-  app.get("/api/domains/:domain/capabilities", domainParam, async (req, res) => {
-    const domain = domainManager.get(req.params.domain as never);
-    const rows = await domain.registry.list();
+  app.get("/api/capabilities", async (_req, res) => {
+    const rows = await jarvis.registry.list();
     res.json(
       rows.map((r) => ({
         name: r.name,
+        category: r.category,
         enabled: r.enabled,
         priority: r.priority,
         credentialRef: r.credentialRef,
@@ -113,27 +97,30 @@ export function createDashboardServer(domainManager: DomainManager): Server {
     );
   });
 
-  app.post("/api/domains/:domain/capabilities/:name/enabled", domainParam, async (req, res) => {
-    const domain = domainManager.get(req.params.domain as never);
+  app.post("/api/capabilities/:name/enabled", async (req, res) => {
     const enabled = Boolean(req.body?.enabled);
-    await domain.registry.setEnabled(req.params.name!, enabled);
+    await jarvis.registry.setEnabled(req.params.name!, enabled);
     res.json({ ok: true });
   });
 
-  app.post("/api/domains/:domain/chat", domainParam, async (req, res) => {
-    const domain = domainManager.get(req.params.domain as never);
-    if (!domain.chat) {
-      res.status(503).json({ error: "chat is not configured for this instance (ANTHROPIC_API_KEY unset)" });
-      return;
-    }
+  app.post("/api/chat", async (req, res) => {
     const sessionId = typeof req.body?.sessionId === "string" ? req.body.sessionId : null;
     const message = typeof req.body?.message === "string" ? req.body.message : null;
     if (!sessionId || !message) {
       res.status(400).json({ error: "sessionId and message are required strings" });
       return;
     }
+    const attachments = parseAttachments(req.body?.attachments);
+    if (attachments === "invalid") {
+      res.status(400).json({ error: "each attachment needs mediaType and base64Data strings" });
+      return;
+    }
+    if (!jarvis.chat) {
+      res.status(503).json({ error: "chat is not configured (ANTHROPIC_API_KEY unset)" });
+      return;
+    }
     try {
-      const result = await domain.chat.converse(sessionId, message);
+      const result = await jarvis.chat.converse(sessionId, message, attachments);
       res.json(result);
     } catch (err) {
       res.status(502).json({ error: err instanceof Error ? err.message : String(err) });
@@ -141,4 +128,19 @@ export function createDashboardServer(domainManager: DomainManager): Server {
   });
 
   return createServer(app);
+}
+
+function parseAttachments(body: unknown): ChatAttachment[] | "invalid" {
+  if (body === undefined) return [];
+  if (!Array.isArray(body)) return "invalid";
+  const attachments: ChatAttachment[] = [];
+  for (const item of body) {
+    if (typeof item?.mediaType !== "string" || typeof item?.base64Data !== "string") return "invalid";
+    attachments.push({
+      mediaType: item.mediaType,
+      base64Data: item.base64Data,
+      filename: typeof item.filename === "string" ? item.filename : undefined,
+    });
+  }
+  return attachments;
 }

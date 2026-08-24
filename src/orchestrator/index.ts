@@ -1,4 +1,4 @@
-import { DomainManager } from "./domainManager.js";
+import { Orchestrator } from "./orchestrator.js";
 import { createDashboardServer } from "./dashboard.js";
 
 const DASHBOARD_PORT = Number(process.env.JARVIS_DASHBOARD_PORT ?? 4570);
@@ -11,27 +11,27 @@ const DASHBOARD_PORT = Number(process.env.JARVIS_DASHBOARD_PORT ?? 4570);
 const DASHBOARD_HOST = process.env.JARVIS_DASHBOARD_HOST ?? "0.0.0.0";
 
 async function main(): Promise<void> {
-  const manager = new DomainManager();
+  const orchestrator = new Orchestrator();
 
-  manager.bus.onPublish((metadata) => {
-    console.log(`[health] ${metadata.domain} @ ${metadata.reportedAt}: ` +
+  orchestrator.bus.onPublish((metadata) => {
+    console.log(`[health] @ ${metadata.reportedAt}: ` +
       `${metadata.moduleHealth.length} module(s) tracked, ` +
       `${metadata.errorCounts.fatal24h} fatal / ${metadata.errorCounts.transient24h} transient errors (24h)`);
   });
 
-  manager.startScheduledCycles();
+  orchestrator.startScheduledCycles();
 
-  const dashboard = createDashboardServer(manager);
+  const dashboard = createDashboardServer(orchestrator);
   dashboard.listen(DASHBOARD_PORT, DASHBOARD_HOST, () => {
     console.log(`[dashboard] listening on http://${DASHBOARD_HOST}:${DASHBOARD_PORT}`);
   });
 
-  console.log("JARVIS v2 orchestrator running (work + personal domains isolated).");
+  console.log("JARVIS v2 orchestrator running.");
 
   const shutdown = async (signal: string) => {
     console.log(`received ${signal}, shutting down...`);
     dashboard.close();
-    await manager.shutdown();
+    await orchestrator.shutdown();
     process.exit(0);
   };
   process.on("SIGINT", () => void shutdown("SIGINT"));

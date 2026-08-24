@@ -1,5 +1,4 @@
 import type Anthropic from "@anthropic-ai/sdk";
-import type { DomainConfig } from "../config/domains.js";
 import type { CapabilityRegistry, CapabilityRow } from "../domain/capabilityRegistry.js";
 import type { CredentialStore } from "../domain/credentialStore.js";
 import type { MemoryStore } from "../domain/memoryStore.js";
@@ -15,35 +14,47 @@ export interface AnthropicMessagesClient {
 export interface ChatToolCall {
   capability: string;
   ok: boolean;
-  summary: string; // operational only — never echoes raw domain content back out of this module
+  summary: string; // operational only — never echoes raw content back out of this module
 }
+
+export interface ChatAttachment {
+  mediaType: string; // e.g. "image/png", "application/pdf"
+  base64Data: string;
+  filename?: string;
+}
+
+export type ChatWidget =
+  | { type: "chart"; title: string; chartType: "bar" | "line"; series: Array<{ label: string; value: number }>; unit?: string }
+  | { type: "list"; title: string; items: Array<{ primary: string; secondary?: string; meta?: string }> }
+  | { type: "image"; url: string; caption?: string };
 
 export interface ChatTurnResult {
   reply: string;
   toolCalls: ChatToolCall[];
+  widgets: ChatWidget[];
 }
 
 const MAX_TOOL_ITERATIONS = 8;
 const DEFAULT_MAX_TOKENS = 4096;
+const SUPPORTED_ATTACHMENT_TYPES = /^image\/(png|jpeg|gif|webp)$|^application\/pdf$/;
 
 /**
- * One per domain, wired with that domain's own registry/credentials/
- * memory/relations — structurally identical to Reviewer/SelfHeal/
- * SecurityAccess. The Anthropic client itself is shared across domains
- * (it's a stateless reasoning layer, holds no domain content — see
- * docs/architecture.md), but conversation history, retrieved memory, and
- * which capabilities are even visible as tools are all domain-scoped and
- * never cross between two ChatService instances.
+ * One JARVIS instance, one conversation. Memory and chat are unified
+ * across everything the assistant has access to — there is no per-domain
+ * split anymore (see docs/architecture.md for why that changed). What
+ * still stays genuinely separate is credentials: each capability still
+ * resolves its own credential_ref, so using the NZB connector never touches
+ * the Hotmail token or vice versa, regardless of how unified the
+ * conversation and memory are.
  *
- * Conversation history lives in memory only (per session id), same v1
- * limitation as ApprovalGate: lost on restart, fine for a single
+ * Conversation history lives in memory only (per session id) — a known v1
+ * limitation, same as ApprovalGate: lost on restart, fine for a single
  * self-hosted instance.
  */
 export class ChatService {
   private readonly histories = new Map<string, Anthropic.MessageParam[]>();
 
   constructor(
-    private readonly config: DomainConfig,
     private readonly anthropic: AnthropicMessagesClient,
     private readonly registry: CapabilityRegistry,
     private readonly credentials: CredentialStore,
@@ -53,18 +64,19 @@ export class ChatService {
     private readonly maxTokens: number = DEFAULT_MAX_TOKENS,
   ) {}
 
-  async converse(sessionId: string, userMessage: string): Promise<ChatTurnResult> {
+  async converse(sessionId: string, userMessage: string, attachments: ChatAttachment[] = []): Promise<ChatTurnResult> {
     const history = this.histories.get(sessionId) ?? [];
-    history.push({ role: "user", content: userMessage });
+    history.push({ role: "user", content: buildUserContent(userMessage, attachments) });
 
     const enabledCapabilities = await this.registry.list({ enabledOnly: true });
     const capabilitiesByName = new Map(enabledCapabilities.map((c) => [c.name, c]));
-    const tools = buildTools(enabledCapabilities);
+    const tools = [...RENDER_TOOLS, ...buildCapabilityTools(enabledCapabilities)];
 
     const { context: memoryContext, hitIds: retrievedMemoryIds } = await this.retrieveMemoryContext(userMessage);
-    const system = buildSystemPrompt(this.config, enabledCapabilities) + memoryContext;
+    const system = buildSystemPrompt(enabledCapabilities) + memoryContext;
 
     const toolCalls: ChatToolCall[] = [];
+    const widgets: ChatWidget[] = [];
     let finalText = "";
 
     for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
@@ -86,6 +98,14 @@ export class ChatService {
       const toolResults: Anthropic.ToolResultBlockParam[] = [];
       for (const block of response.content) {
         if (block.type !== "tool_use") continue;
+
+        if (isRenderToolName(block.name)) {
+          const widget = renderToolCallToWidget(block.name, block.input);
+          widgets.push(widget);
+          toolResults.push({ type: "tool_result", tool_use_id: block.id, content: "rendered" });
+          continue;
+        }
+
         const outcome = await this.runCapability(capabilitiesByName.get(block.name), block.name, block.input);
         toolResults.push({ type: "tool_result", tool_use_id: block.id, content: outcome.content, is_error: !outcome.ok });
         toolCalls.push({ capability: block.name, ok: outcome.ok, summary: outcome.summary });
@@ -96,7 +116,7 @@ export class ChatService {
     this.histories.set(sessionId, history);
     await this.persistInteraction(userMessage, finalText, sessionId, retrievedMemoryIds);
 
-    return { reply: finalText, toolCalls };
+    return { reply: finalText, toolCalls, widgets };
   }
 
   private async runCapability(
@@ -164,7 +184,124 @@ export class ChatService {
   }
 }
 
-function buildTools(capabilities: CapabilityRow[]): Anthropic.Tool[] {
+function buildUserContent(userMessage: string, attachments: ChatAttachment[]): string | Anthropic.MessageParam["content"] {
+  if (attachments.length === 0) return userMessage;
+
+  const blocks: Anthropic.ContentBlockParam[] = [];
+  for (const attachment of attachments) {
+    if (!SUPPORTED_ATTACHMENT_TYPES.test(attachment.mediaType)) {
+      throw new Error(
+        `unsupported attachment type "${attachment.mediaType}" — only images (png/jpeg/gif/webp) and PDF are supported`,
+      );
+    }
+    if (attachment.mediaType === "application/pdf") {
+      blocks.push({
+        type: "document",
+        source: { type: "base64", media_type: "application/pdf", data: attachment.base64Data },
+      });
+    } else {
+      blocks.push({
+        type: "image",
+        source: { type: "base64", media_type: attachment.mediaType as "image/png", data: attachment.base64Data },
+      });
+    }
+  }
+  blocks.push({ type: "text", text: userMessage });
+  return blocks;
+}
+
+const RENDER_TOOLS: Anthropic.Tool[] = [
+  {
+    name: "render_chart",
+    description:
+      "Show the user a chart (bar or line) — e.g. performance over time, a comparison of numbers. Call this whenever a visual chart would answer the question better than prose.",
+    input_schema: {
+      type: "object",
+      properties: {
+        title: { type: "string" },
+        chartType: { type: "string", enum: ["bar", "line"] },
+        unit: { type: "string", description: "optional unit label, e.g. '%', 'ms', 'GB'" },
+        series: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: { label: { type: "string" }, value: { type: "number" } },
+            required: ["label", "value"],
+          },
+        },
+      },
+      required: ["title", "chartType", "series"],
+    },
+  },
+  {
+    name: "render_list",
+    description:
+      "Show the user a structured list — e.g. recent emails, search results, action items. Call this whenever showing several structured items would be clearer than a paragraph.",
+    input_schema: {
+      type: "object",
+      properties: {
+        title: { type: "string" },
+        items: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              primary: { type: "string" },
+              secondary: { type: "string" },
+              meta: { type: "string" },
+            },
+            required: ["primary"],
+          },
+        },
+      },
+      required: ["title", "items"],
+    },
+  },
+  {
+    name: "render_image",
+    description:
+      "Show the user an image. Only use a URL or base64 data URI that's already available from a prior tool result or an attachment the user sent — never invent one.",
+    input_schema: {
+      type: "object",
+      properties: {
+        url: { type: "string", description: "http(s) URL or data: URI of the image" },
+        caption: { type: "string" },
+      },
+      required: ["url"],
+    },
+  },
+];
+const RENDER_TOOL_NAMES = new Set(RENDER_TOOLS.map((t) => t.name));
+
+function isRenderToolName(name: string): boolean {
+  return RENDER_TOOL_NAMES.has(name);
+}
+
+function renderToolCallToWidget(name: string, input: unknown): ChatWidget {
+  const i = input as Record<string, unknown>;
+  switch (name) {
+    case "render_chart":
+      return {
+        type: "chart",
+        title: String(i.title ?? ""),
+        chartType: i.chartType === "line" ? "line" : "bar",
+        series: Array.isArray(i.series) ? (i.series as Array<{ label: string; value: number }>) : [],
+        unit: typeof i.unit === "string" ? i.unit : undefined,
+      };
+    case "render_list":
+      return {
+        type: "list",
+        title: String(i.title ?? ""),
+        items: Array.isArray(i.items) ? (i.items as Array<{ primary: string; secondary?: string; meta?: string }>) : [],
+      };
+    case "render_image":
+      return { type: "image", url: String(i.url ?? ""), caption: typeof i.caption === "string" ? i.caption : undefined };
+    default:
+      throw new Error(`unreachable: unknown render tool "${name}"`);
+  }
+}
+
+function buildCapabilityTools(capabilities: CapabilityRow[]): Anthropic.Tool[] {
   return capabilities.map((c) => ({
     name: c.name,
     description: c.systemPrompt ?? `Capability "${c.name}"`,
@@ -179,16 +316,17 @@ function buildTools(capabilities: CapabilityRow[]): Anthropic.Tool[] {
   }));
 }
 
-function buildSystemPrompt(config: DomainConfig, capabilities: CapabilityRow[]): string {
+function buildSystemPrompt(capabilities: CapabilityRow[]): string {
   const capList =
     capabilities.length > 0
-      ? capabilities.map((c) => `- ${c.name}: ${c.systemPrompt ?? "no description"}`).join("\n")
+      ? capabilities.map((c) => `- ${c.name}${c.category ? ` (${c.category})` : ""}: ${c.systemPrompt ?? "no description"}`).join("\n")
       : "(no capabilities enabled)";
   return (
-    `You are JARVIS, a personal AI assistant. You are operating strictly within the "${config.label}" domain ` +
-    `right now — there is no "other domain" from your perspective in this conversation; you only know this ` +
-    `one exists, and you must never claim or imply access to data, credentials, or capabilities outside it.\n\n` +
-    `Capabilities available in this domain:\n${capList}`
+    `You are JARVIS, a personal AI assistant with one unified memory and conversation across every area of the ` +
+    `user's life — work and personal, all in one place. You can also call render_chart, render_list, or ` +
+    `render_image whenever showing a chart, a list, or an image would communicate better than prose alone; use ` +
+    `them freely, not just when asked.\n\n` +
+    `Available capabilities:\n${capList}`
   );
 }
 
