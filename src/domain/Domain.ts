@@ -10,6 +10,7 @@ import { Reviewer, type ErrorLogCounts } from "../core/reviewer.js";
 import { SelfHeal, type SelfHealHandlers } from "../core/selfHeal.js";
 import { SecurityAccess } from "../core/security.js";
 import { ApprovalGate, PushoverApprovalNotifier } from "../core/approvalGate.js";
+import { CoreOpsStore } from "../core/coreOpsStore.js";
 import type { OperationalMetadata } from "../orchestrator/operationalMetadata.js";
 
 /**
@@ -27,6 +28,7 @@ export class DomainInstance {
   readonly reviewer: Reviewer;
   readonly selfHeal: SelfHeal;
   readonly security: SecurityAccess;
+  readonly ops: CoreOpsStore;
 
   private readonly pool: pg.Pool;
   private moduleRestartCounts = new Map<string, number>();
@@ -43,6 +45,7 @@ export class DomainInstance {
     this.registry = new CapabilityRegistry(config, this.pool);
     this.security = new SecurityAccess(config, this.credentials, this.registry);
     this.reviewer = new Reviewer(config, this.pool, this.registry, this.memory, this.security);
+    this.ops = new CoreOpsStore(config, this.pool);
 
     const notifier = new PushoverApprovalNotifier(config);
     const approvalGate = new ApprovalGate(notifier);

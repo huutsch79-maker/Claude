@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>JARVIS v2 — Ops Dashboard</title>
+<style>
+  :root {
+    --bg: #0b0e14; --panel: #141922; --border: #262e3d; --text: #e6e9ef; --muted: #8b93a7;
+    --work: #4f8cff; --personal: #34c98f; --danger: #ff5c5c; --warn: #ffb454; --ok: #34c98f;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  header { padding: 16px 24px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; letter-spacing: 0.02em; }
+  header .token-box { display: flex; gap: 8px; align-items: center; }
+  input[type="password"], input[type="text"] { background: var(--panel); border: 1px solid var(--border); color: var(--text); padding: 6px 8px; border-radius: 6px; font-size: 13px; }
+  button { background: var(--panel); border: 1px solid var(--border); color: var(--text); padding: 6px 10px; border-radius: 6px; font-size: 13px; cursor: pointer; }
+  button:hover { border-color: var(--muted); }
+  button.primary { background: var(--work); border-color: var(--work); color: #fff; }
+  button.danger { background: transparent; border-color: var(--danger); color: var(--danger); }
+  main { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  .col { padding: 20px; border-right: 1px solid var(--border); }
+  .col:last-child { border-right: none; }
+  .col h2 { display: flex; align-items: center; gap: 8px; font-size: 15px; margin: 0 0 16px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .col.work .dot { background: var(--work); }
+  .col.personal .dot { background: var(--personal); }
+  section { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 14px; }
+  section h3 { margin: 0 0 10px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+  .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+  .row:last-child { border-bottom: none; }
+  .muted { color: var(--muted); }
+  .badge { font-size: 11px; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border); }
+  .badge.auto_fix { color: var(--ok); border-color: var(--ok); }
+  .badge.requires_approval { color: var(--warn); border-color: var(--warn); }
+  .badge.applied, .badge.approved { color: var(--ok); border-color: var(--ok); }
+  .badge.rejected, .badge.failed { color: var(--danger); border-color: var(--danger); }
+  .badge.pending, .badge.pending_approval { color: var(--warn); border-color: var(--warn); }
+  .empty { color: var(--muted); font-style: italic; padding: 8px 0; }
+  .actions { display: flex; gap: 6px; }
+  .actions button { font-size: 12px; padding: 4px 8px; }
+  #authGate { padding: 60px 24px; text-align: center; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>JARVIS v2 — Ops Dashboard</h1>
+  <div class="token-box">
+    <input id="tokenInput" type="password" placeholder="dashboard token (if configured)" />
+    <button id="saveToken">Connect</button>
+    <button id="refreshAll">Refresh</button>
+  </div>
+</header>
+
+<div id="authGate" style="display:none">Set a token above (or leave blank if JARVIS_DASHBOARD_TOKEN isn't configured) and click Connect.</div>
+
+<main id="main" style="display:none">
+  <div class="col work">
+    <h2><span class="dot"></span> Work (NZB)</h2>
+    <div class="content" data-domain="work"></div>
+  </div>
+  <div class="col personal">
+    <h2><span class="dot"></span> Personal</h2>
+    <div class="content" data-domain="personal"></div>
+  </div>
+</main>
+
+<script>
+const DOMAINS = ["work", "personal"];
+let TOKEN = localStorage.getItem("jarvis_dashboard_token") || "";
+
+function authHeaders() {
+  return TOKEN ? { "authorization": "Bearer " + TOKEN } : {};
+}
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, {
+    ...opts,
+    headers: { "content-type": "application/json", ...authHeaders(), ...(opts.headers || {}) },
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+  return res.status === 204 ? null : res.json();
+}
+
+function el(tag, attrs = {}, children = []) {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "text") node.textContent = v;
+    else if (k.startsWith("on")) node.addEventListener(k.slice(2), v);
+    else node.setAttribute(k, v);
+  }
+  for (const c of [].concat(children)) node.appendChild(c);
+  return node;
+}
+
+function badge(text, cls) {
+  return el("span", { class: "badge " + cls, text });
+}
+
+async function renderHealth(container, domain, healthAll) {
+  const section = el("section");
+  section.appendChild(el("h3", { text: "Health" }));
+  const h = healthAll[domain];
+  if (!h) {
+    section.appendChild(el("div", { class: "empty", text: "no health report yet (waits for the first scheduler tick)" }));
+  } else {
+    section.appendChild(el("div", { class: "row" }, [
+      el("span", { text: "last reported" }),
+      el("span", { class: "muted", text: new Date(h.reportedAt).toLocaleString() }),
+    ]));
+    section.appendChild(el("div", { class: "row" }, [
+      el("span", { text: "errors (24h)" }),
+      el("span", { class: "muted", text: h.errorCounts.fatal24h + " fatal / " + h.errorCounts.transient24h + " transient" }),
+    ]));
+    for (const c of h.credentialStatus) {
+      section.appendChild(el("div", { class: "row" }, [
+        el("span", { text: c.credentialRef }),
+        badge(c.status, c.status === "valid" ? "auto_fix" : c.status === "expiring_soon" ? "requires_approval" : "rejected"),
+      ]));
+    }
+  }
+  container.appendChild(section);
+}
+
+async function renderProposals(container, domain) {
+  const section = el("section");
+  section.appendChild(el("h3", { text: "Reviewer proposals (pending)" }));
+  const proposals = await api(`/api/domains/${domain}/proposals?status=pending`);
+  if (proposals.length === 0) section.appendChild(el("div", { class: "empty", text: "none pending" }));
+  for (const p of proposals) {
+    const row = el("div", { class: "row" });
+    row.appendChild(el("div", {}, [
+      el("div", { text: p.summary }),
+      el("div", { class: "muted", text: p.category + " · " + new Date(p.createdAt).toLocaleString() }),
+    ]));
+    const actions = el("div", { class: "actions" }, [
+      el("button", { text: "Acknowledge", onclick: async () => { await api(`/api/domains/${domain}/proposals/${p.id}/approve`, { method: "POST" }); renderAll(); } }),
+      el("button", { class: "danger", text: "Dismiss", onclick: async () => { await api(`/api/domains/${domain}/proposals/${p.id}/reject`, { method: "POST" }); renderAll(); } }),
+    ]);
+    row.appendChild(actions);
+    section.appendChild(row);
+  }
+  container.appendChild(section);
+}
+
+async function renderScripts(container, domain) {
+  const section = el("section");
+  section.appendChild(el("h3", { text: "Scripts" }));
+  const scripts = await api("/api/scripts");
+  for (const s of scripts) {
+    const row = el("div", { class: "row" });
+    row.appendChild(el("div", {}, [
+      el("div", { text: s.name }),
+      el("div", { class: "muted", text: s.description }),
+    ]));
+    const right = el("div", { class: "actions" });
+    right.appendChild(badge(s.trustTier, s.trustTier));
+    right.appendChild(el("button", {
+      text: "Run",
+      onclick: async () => {
+        let args = {};
+        if (s.name === "apply-migration") {
+          const file = prompt("migration filename (must exist in db/migrations/" + domain + "/):");
+          if (!file) return;
+          args = { file };
+        }
+        try {
+          const result = await api(`/api/domains/${domain}/scripts/${s.name}/run`, { method: "POST", body: JSON.stringify({ args }) });
+          alert(result.status === "pending_approval" ? "Proposed — needs approval (see Script runs below)." : "Applied.");
+          renderAll();
+        } catch (e) { alert("Failed: " + e.message); }
+      },
+    }));
+    row.appendChild(right);
+    section.appendChild(row);
+  }
+  container.appendChild(section);
+}
+
+async function renderScriptRuns(container, domain) {
+  const section = el("section");
+  section.appendChild(el("h3", { text: "Script run history" }));
+  const runs = await api(`/api/domains/${domain}/script-runs`);
+  if (runs.length === 0) section.appendChild(el("div", { class: "empty", text: "no runs yet" }));
+  for (const r of runs.slice(0, 15)) {
+    const row = el("div", { class: "row" });
+    row.appendChild(el("div", {}, [
+      el("div", { text: r.scriptName }),
+      el("div", { class: "muted", text: (r.detail || "") + " · " + new Date(r.startedAt).toLocaleString() }),
+    ]));
+    const right = el("div", { class: "actions" });
+    right.appendChild(badge(r.status, r.status));
+    if (r.status === "pending_approval") {
+      right.appendChild(el("button", { text: "Approve", onclick: async () => { await api(`/api/domains/${domain}/scripts/${r.id}/approve`, { method: "POST" }); renderAll(); } }));
+      right.appendChild(el("button", { class: "danger", text: "Reject", onclick: async () => { await api(`/api/domains/${domain}/scripts/${r.id}/reject`, { method: "POST" }); renderAll(); } }));
+    }
+    row.appendChild(right);
+    section.appendChild(row);
+  }
+  container.appendChild(section);
+}
+
+async function renderCapabilities(container, domain) {
+  const section = el("section");
+  section.appendChild(el("h3", { text: "Capabilities" }));
+  const caps = await api(`/api/domains/${domain}/capabilities`);
+  for (const c of caps) {
+    const row = el("div", { class: "row" });
+    row.appendChild(el("div", {}, [
+      el("div", { text: c.name }),
+      el("div", { class: "muted", text: "priority " + c.priority + (c.credentialRef ? " · cred: " + c.credentialRef : "") }),
+    ]));
+    row.appendChild(el("button", {
+      text: c.enabled ? "Disable" : "Enable",
+      onclick: async () => { await api(`/api/domains/${domain}/capabilities/${c.name}/enabled`, { method: "POST", body: JSON.stringify({ enabled: !c.enabled }) }); renderAll(); },
+    }));
+    section.appendChild(row);
+  }
+  container.appendChild(section);
+}
+
+async function renderAll() {
+  const healthAll = await api("/api/health");
+  for (const domain of DOMAINS) {
+    const container = document.querySelector(`.content[data-domain="${domain}"]`);
+    container.innerHTML = "";
+    await renderHealth(container, domain, healthAll);
+    await renderProposals(container, domain);
+    await renderScripts(container, domain);
+    await renderScriptRuns(container, domain);
+    await renderCapabilities(container, domain);
+  }
+}
+
+document.getElementById("saveToken").addEventListener("click", async () => {
+  TOKEN = document.getElementById("tokenInput").value.trim();
+  localStorage.setItem("jarvis_dashboard_token", TOKEN);
+  try {
+    await api("/api/health");
+    document.getElementById("authGate").style.display = "none";
+    document.getElementById("main").style.display = "grid";
+    renderAll();
+  } catch (e) {
+    document.getElementById("authGate").style.display = "block";
+    document.getElementById("authGate").textContent = "Connection failed: " + e.message;
+  }
+});
+document.getElementById("refreshAll").addEventListener("click", renderAll);
+
+document.getElementById("tokenInput").value = TOKEN;
+document.getElementById("saveToken").click();
+</script>
+</body>
+</html>

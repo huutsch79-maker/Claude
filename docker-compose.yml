@@ -29,6 +29,12 @@ services:
       JARVIS_DB_HOST: db
       JARVIS_DB_PORT: "5432"
       JARVIS_DB_NAME: jarvis
+    ports:
+      # Bound to all interfaces so it's reachable from other devices on the
+      # LAN (e.g. a laptop browser), not just the NUC itself. This is why
+      # JARVIS_DASHBOARD_TOKEN in .env matters — set it before relying on
+      # this beyond a trusted home network.
+      - "4570:4570"
 
 volumes:
   jarvis_db_data:
