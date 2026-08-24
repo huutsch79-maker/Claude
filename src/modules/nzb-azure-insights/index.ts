@@ -1,5 +1,6 @@
 import type { CapabilityContext, CapabilityModule } from "../../domain/capabilityRegistry.js";
 import { getAppOnlyAccessToken } from "../../domain/appOnlyTokenProvider.js";
+import { describeFailedResponse } from "../../domain/httpError.js";
 
 const ARM_SCOPE = "https://management.azure.com/.default";
 
@@ -65,20 +66,26 @@ const nzbAzureInsightsModule: CapabilityModule = {
           }),
         },
       );
-      if (!response.ok) throw new Error(`nzb-azure-cost-insights: Cost Management query failed (${response.status})`);
+      if (!response.ok) {
+        throw new Error(`nzb-azure-cost-insights: Cost Management query failed (${await describeFailedResponse(response)})`);
+      }
       return response.json();
     }
 
     // azure.orphaned-resources
     const preset = req.payload.preset ?? "";
     const query = RESOURCE_GRAPH_PRESETS[preset];
-    if (!query) throw new Error(`nzb-azure-cost-insights: unknown preset "${preset}"`);
+    if (!query) {
+      throw new Error(`nzb-azure-cost-insights: unknown preset "${preset}" — must be one of ${Object.keys(RESOURCE_GRAPH_PRESETS).join(", ")}`);
+    }
     const response = await fetch("https://management.azure.com/providers/Microsoft.ResourceGraph/resources?api-version=2022-10-01", {
       method: "POST",
       headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
       body: JSON.stringify({ query }),
     });
-    if (!response.ok) throw new Error(`nzb-azure-cost-insights: Resource Graph query failed (${response.status})`);
+    if (!response.ok) {
+      throw new Error(`nzb-azure-cost-insights: Resource Graph query failed (${await describeFailedResponse(response)})`);
+    }
     return response.json();
   },
 };

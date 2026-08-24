@@ -17,7 +17,11 @@ export const nzbAzureInsightsManifest = {
     "are NOT gated by PIM the way a human admin's role activation is, which is exactly why this credential is " +
     "kept read-only. This capability can never delete, resize, or modify a resource — report findings and " +
     "recommend cleanup, but any actual deletion needs a human with PIM-activated Contributor access, or should " +
-    "go through a reviewer proposal for the user to act on themselves.",
+    "go through a reviewer proposal for the user to act on themselves.\n\n" +
+    "Two intents, exact payload shapes: intent \"azure.cost.summary\" with payload " +
+    '{"timeframe": "<one of MonthToDate, BillingMonthToDate, TheLastMonth, defaults to MonthToDate>"} — or ' +
+    'intent "azure.orphaned-resources" with payload {"preset": "<one of unattached-disks, unassociated-public-ips>"}. ' +
+    'The "preset" field is required for azure.orphaned-resources — never call it without one.',
   tool_config: { provider: "azure-resource-graph", tenant: "nzb", scopes: ["Reader", "Cost Management Reader"] },
   model_override: null,
   credential_ref: "nzb-azure-insights-oauth",

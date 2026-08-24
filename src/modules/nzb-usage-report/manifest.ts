@@ -16,7 +16,11 @@ export const nzbUsageReportManifest = {
     "Use it to answer questions about mailbox usage, app usage, or which licenses/mailboxes look unused. This " +
     "capability cannot change, remove, or reassign anything — if the user wants a cleanup acted on, tell them " +
     "what you found and that removing a license or disabling an account needs to be done by an admin with PIM " +
-    "activated (or via a proposal in the dashboard), never by this capability directly.",
+    "activated (or via a proposal in the dashboard), never by this capability directly.\n\n" +
+    "Call it with intent \"m365.usage.report\" and payload exactly " +
+    '{"report": "<one of getOffice365ActiveUserDetail, getMailboxUsageDetail, getM365AppUserDetail, ' +
+    'getOffice365ServicesUserCounts>", "period": "<one of D7, D30, D90, D180, defaults to D30>"}. ' +
+    'The "report" field is required — never call this without it.',
   tool_config: { provider: "microsoft-graph", tenant: "nzb", scopes: ["Reports.Read.All"] },
   model_override: null,
   credential_ref: "nzb-usage-report-oauth",

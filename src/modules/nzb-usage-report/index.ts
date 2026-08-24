@@ -1,5 +1,6 @@
 import type { CapabilityContext, CapabilityModule } from "../../domain/capabilityRegistry.js";
 import { getAppOnlyAccessToken } from "../../domain/appOnlyTokenProvider.js";
+import { describeFailedResponse } from "../../domain/httpError.js";
 
 const GRAPH_SCOPE = "https://graph.microsoft.com/.default";
 
@@ -43,18 +44,21 @@ const nzbUsageReportModule: CapabilityModule = {
       );
     }
 
-    const report = req.payload.report;
-    if (!ALLOWED_REPORTS.has(report)) {
-      throw new Error(`nzb-m365-usage-report: unsupported report "${report}"`);
+    const payload = req.payload ?? {};
+    const report = payload.report;
+    if (!report || !ALLOWED_REPORTS.has(report)) {
+      throw new Error(
+        `nzb-m365-usage-report: unsupported report "${report}" — must be one of ${[...ALLOWED_REPORTS].join(", ")}`,
+      );
     }
-    const period = req.payload.period ?? "D30";
+    const period = payload.period ?? "D30";
 
     const accessToken = await getAppOnlyAccessToken(ctx.credential.value, GRAPH_SCOPE);
     const response = await fetch(
       `https://graph.microsoft.com/v1.0/reports/${report}(period='${period}')?$format=application/json`,
       { headers: { authorization: `Bearer ${accessToken}` } },
     );
-    if (!response.ok) throw new Error(`nzb-m365-usage-report: Graph report failed (${response.status})`);
+    if (!response.ok) throw new Error(`nzb-m365-usage-report: Graph report failed (${await describeFailedResponse(response)})`);
     return response.json();
   },
 };

@@ -1,4 +1,5 @@
 import type { CapabilityContext, CapabilityModule } from "../../domain/capabilityRegistry.js";
+import { describeFailedResponse } from "../../domain/httpError.js";
 
 export interface NzbRequest {
   intent: "m365.mail.search" | "dynamics.record.lookup";
@@ -31,7 +32,7 @@ const nzbConnectorModule: CapabilityModule = {
         `https://graph.microsoft.com/v1.0/me/messages?$search="${encodeURIComponent(query)}"`,
         { headers: { authorization: `Bearer ${ctx.credential.value}` } },
       );
-      if (!response.ok) throw new Error(`nzb-m365-connector: Graph search failed (${response.status})`);
+      if (!response.ok) throw new Error(`nzb-m365-connector: Graph search failed (${await describeFailedResponse(response)})`);
       return response.json();
     }
 
@@ -41,7 +42,7 @@ const nzbConnectorModule: CapabilityModule = {
     const response = await fetch(`${dynamicsBase}/records/${encodeURIComponent(recordId)}`, {
       headers: { authorization: `Bearer ${ctx.credential.value}` },
     });
-    if (!response.ok) throw new Error(`nzb-m365-connector: Dynamics lookup failed (${response.status})`);
+    if (!response.ok) throw new Error(`nzb-m365-connector: Dynamics lookup failed (${await describeFailedResponse(response)})`);
     return response.json();
   },
 };

@@ -1,4 +1,5 @@
 import type { CapabilityContext, CapabilityModule } from "../../domain/capabilityRegistry.js";
+import { describeFailedResponse } from "../../domain/httpError.js";
 
 export interface EmailRequest {
   intent: "email.search" | "email.send";
@@ -35,7 +36,7 @@ const hotmailModule: CapabilityModule = {
       const response = await fetch(`${graphBase}/me/messages?$search="${encodeURIComponent(query)}"`, {
         headers: { authorization: `Bearer ${ctx.credential.value}` },
       });
-      if (!response.ok) throw new Error(`hotmail-outlook: Graph search failed (${response.status})`);
+      if (!response.ok) throw new Error(`hotmail-outlook: Graph search failed (${await describeFailedResponse(response)})`);
       return response.json();
     }
 
@@ -45,7 +46,7 @@ const hotmailModule: CapabilityModule = {
       headers: { authorization: `Bearer ${ctx.credential.value}`, "content-type": "application/json" },
       body: JSON.stringify({ message: req.payload }),
     });
-    if (!response.ok) throw new Error(`hotmail-outlook: Graph sendMail failed (${response.status})`);
+    if (!response.ok) throw new Error(`hotmail-outlook: Graph sendMail failed (${await describeFailedResponse(response)})`);
     return { sent: true };
   },
 };
