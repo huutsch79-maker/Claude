@@ -20,7 +20,9 @@ export const nzbUsageReportManifest = {
     "Call it with intent \"m365.usage.report\" and payload exactly " +
     '{"report": "<one of getOffice365ActiveUserDetail, getMailboxUsageDetail, getM365AppUserDetail, ' +
     'getOffice365ServicesUserCounts>", "period": "<one of D7, D30, D90, D180, defaults to D30>"}. ' +
-    'The "report" field is required — never call this without it.',
+    'The "report" field is required — never call this without it. The result comes back as ' +
+    '{report, period, format: "csv", data: "<CSV text>"} — Graph only supports CSV for these report endpoints, ' +
+    "so parse/summarize the CSV yourself rather than expecting JSON.",
   tool_config: { provider: "microsoft-graph", tenant: "nzb", scopes: ["Reports.Read.All"] },
   model_override: null,
   credential_ref: "nzb-usage-report-oauth",

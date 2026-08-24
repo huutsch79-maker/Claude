@@ -53,13 +53,16 @@ const nzbUsageReportModule: CapabilityModule = {
     }
     const period = payload.period ?? "D30";
 
+    // These report endpoints only support CSV, not JSON — $format=application/json
+    // gets a 400 "JSON format is not supported" back, discovered live against
+    // the NZB tenant. Graph's default (and only) output here is CSV text.
     const accessToken = await getAppOnlyAccessToken(ctx.credential.value, GRAPH_SCOPE);
-    const response = await fetch(
-      `https://graph.microsoft.com/v1.0/reports/${report}(period='${period}')?$format=application/json`,
-      { headers: { authorization: `Bearer ${accessToken}` } },
-    );
+    const response = await fetch(`https://graph.microsoft.com/v1.0/reports/${report}(period='${period}')`, {
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
     if (!response.ok) throw new Error(`nzb-m365-usage-report: Graph report failed (${await describeFailedResponse(response)})`);
-    return response.json();
+    const csv = await response.text();
+    return { report, period, format: "csv", data: csv };
   },
 };
 
