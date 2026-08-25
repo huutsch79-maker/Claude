@@ -89,4 +89,29 @@ describe("dashboard server", () => {
     expect(res.status).toBe(200);
     expect(await res.text()).toContain("JARVIS");
   });
+
+  it("a failing script approval returns 500 instead of crashing the process", async () => {
+    // Regression: this exact shape of failure (a requires_approval script's
+    // run() rejecting — e.g. redeploy-jarvis when deploy-agent is
+    // unreachable) took down the whole orchestrator in production, because
+    // executeAndRecord() deliberately re-throws after recording the
+    // failure, and this route awaited that without its own try/catch —
+    // an unhandled rejection in an async Express handler, which Node
+    // terminates the process on by default.
+    orchestrator.jarvis.selfHeal.approveScript = (async () => {
+      throw new Error("deploy-agent unreachable");
+    }) as typeof orchestrator.jarvis.selfHeal.approveScript;
+
+    const res = await fetch(`${baseUrl}/api/scripts/some-id/approve`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain("deploy-agent unreachable");
+
+    // The server must still be alive and answering after that failure.
+    const health = await fetch(`${baseUrl}/api/health`, { headers: { authorization: `Bearer ${TOKEN}` } });
+    expect(health.status).toBe(200);
+  });
 });

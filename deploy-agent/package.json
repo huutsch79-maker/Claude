@@ -1,0 +1,14 @@
+{
+  "name": "jarvis-deploy-agent",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Narrowly-scoped sidecar with Docker-socket access — the only service in this stack that has it. Exposes exactly two fixed, parameterless operations (git pull; docker compose build+up orchestrator). See docs/architecture.md's Self-deploy section.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  }
+}

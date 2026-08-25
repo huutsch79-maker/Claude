@@ -79,13 +79,29 @@ export function createDashboardServer(orchestrator: Orchestrator): Server {
   });
 
   app.post("/api/scripts/:id/approve", async (req, res) => {
-    const ok = await jarvis.selfHeal.approveScript(req.params.id!);
-    res.status(ok ? 200 : 404).json({ ok });
+    // executeAndRecord (called by approveScript) deliberately re-throws
+    // after recording the failure, so callers running scripts directly
+    // (tests, future non-HTTP callers) still see the error — but an
+    // Express handler that awaits a rejected promise without its own
+    // try/catch becomes an unhandled rejection, and Node terminates the
+    // whole process on those by default. A script failing during
+    // approval (a bad file, deploy-agent unreachable, anything) must
+    // never take down chat and the dashboard along with it.
+    try {
+      const ok = await jarvis.selfHeal.approveScript(req.params.id!);
+      res.status(ok ? 200 : 404).json({ ok });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
+    }
   });
 
   app.post("/api/scripts/:id/reject", async (req, res) => {
-    const ok = await jarvis.selfHeal.rejectScript(req.params.id!);
-    res.status(ok ? 200 : 404).json({ ok });
+    try {
+      const ok = await jarvis.selfHeal.rejectScript(req.params.id!);
+      res.status(ok ? 200 : 404).json({ ok });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
+    }
   });
 
   app.get("/api/capabilities", async (_req, res) => {
