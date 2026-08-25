@@ -191,6 +191,7 @@ export class ChatService {
       return { ok: true, content: JSON.stringify(result), summary: `handled by ${row.name}` };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      console.error(`[chat] capability "${row.name}" failed:`, err);
       return { ok: false, content: message, summary: `${row.name} failed: ${message}` };
     }
   }
