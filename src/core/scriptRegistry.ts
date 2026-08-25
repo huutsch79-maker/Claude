@@ -2,6 +2,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import type pg from "pg";
 import type { TrustTier } from "./trustTiers.js";
+import { getFile, putFile, websiteRepoRef } from "../domain/githubContentsApi.js";
 
 // Resolved from the process's working directory rather than this file's own
 // location: tsc's outDir nests compiled files under dist/src/core/, one
@@ -85,6 +86,72 @@ export const SCRIPTS: Readonly<Record<string, ScriptDefinition>> = {
         client.release();
       }
       return { detail: `applied ${filename}` };
+    },
+  },
+
+  "apply-website-file": {
+    name: "apply-website-file",
+    description:
+      "Create or overwrite one file in the website content repo — for anything beyond page content or CSS " +
+      "(Astro templates/markup, astro.config.mjs, content.config.ts, admin/config.yml, package.json). Requires " +
+      "approval because a bad file here can break the whole site's build, unlike a content edit which can only " +
+      "ever go wrong on one page.",
+    trustTier: "requires_approval", // structural website change — same reasoning as apply-migration
+    run: async (ctx) => {
+      const filePath = ctx.args.path;
+      const contentBase64 = ctx.args.contentBase64;
+      if (!filePath) throw new Error("apply-website-file requires args.path");
+      if (!contentBase64) throw new Error("apply-website-file requires args.contentBase64");
+      if (filePath.startsWith("/") || filePath.includes("..")) {
+        throw new Error(`apply-website-file: rejected unsafe path "${filePath}"`);
+      }
+      if (filePath.startsWith(".github/")) {
+        throw new Error(
+          `apply-website-file: refusing to write to .github/ — that can grant CI code execution, out of scope for this script.`,
+        );
+      }
+
+      const token = process.env.JARVIS_CRED_WEBSITE_GITHUB;
+      if (!token) throw new Error("apply-website-file: JARVIS_CRED_WEBSITE_GITHUB is not set");
+
+      const ref = websiteRepoRef();
+      const existing = await getFile(ref, filePath, token);
+      await putFile(ref, filePath, contentBase64, `website: apply ${filePath} (approved)`, existing?.sha, token);
+
+      let rebuildDetail = "rebuild not configured (JARVIS_WEBSITE_REBUILD_URL unset)";
+      const rebuildUrl = process.env.JARVIS_WEBSITE_REBUILD_URL;
+      if (rebuildUrl) {
+        try {
+          const response = await fetch(rebuildUrl, { method: "POST" });
+          rebuildDetail = response.ok ? "rebuild triggered" : `rebuild trigger failed (${response.status})`;
+        } catch (err) {
+          rebuildDetail = `rebuild trigger failed (${err instanceof Error ? err.message : String(err)})`;
+        }
+      }
+
+      return { detail: `wrote ${filePath} to the website repo; ${rebuildDetail}` };
+    },
+  },
+
+  "redeploy-jarvis": {
+    name: "redeploy-jarvis",
+    description:
+      "Pull the latest JARVIS code and rebuild+restart the orchestrator itself, via the deploy-agent sidecar " +
+      "(the only service with Docker-socket access). Requires approval: this restarts the very process handling " +
+      "chat, and a bad pull/build takes JARVIS offline with no way to fix itself — recovering needs direct NUC " +
+      "access (SSH) the same as any other broken deploy, JARVIS included.",
+    trustTier: "requires_approval", // restarts JARVIS itself — same reasoning as apply-migration, higher stakes
+    run: async () => {
+      const url = process.env.JARVIS_DEPLOY_AGENT_URL;
+      if (!url) throw new Error("redeploy-jarvis: JARVIS_DEPLOY_AGENT_URL is not set");
+      const response = await fetch(url, { method: "POST" });
+      if (!response.ok) throw new Error(`redeploy-jarvis: deploy-agent rejected the request (${response.status})`);
+      return {
+        detail:
+          "redeploy started on deploy-agent — this may restart the orchestrator mid-response, so success isn't " +
+          "confirmed yet; check again shortly (deploy-agent's GET /internal/last-redeploy, or just whether this " +
+          "chat is responding on the new code).",
+      };
     },
   },
 };

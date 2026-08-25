@@ -47,7 +47,12 @@ describe("dashboard server", () => {
   it("lists the fixed script registry", async () => {
     const res = await fetch(`${baseUrl}/api/scripts`, { headers: { authorization: `Bearer ${TOKEN}` } });
     const scripts = (await res.json()) as Array<{ name: string }>;
-    expect(scripts.map((s) => s.name).sort()).toEqual(["apply-migration", "vacuum-analyze"]);
+    expect(scripts.map((s) => s.name).sort()).toEqual([
+      "apply-migration",
+      "apply-website-file",
+      "redeploy-jarvis",
+      "vacuum-analyze",
+    ]);
   });
 
   it("rejects an unconfigured chat request with 503, not a crash", async () => {

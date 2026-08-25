@@ -62,6 +62,36 @@ services:
       # and it must never get a Cloudflare Tunnel hostname of its own.
       - "127.0.0.1:8080:8080"
 
+  # Self-deploy for JARVIS itself (git pull + rebuild the orchestrator) —
+  # see docs/architecture.md "Self-deploy". This is the ONLY service in
+  # this file with Docker-socket access — deliberately never added to
+  # orchestrator, since that would be root-equivalent host access reachable
+  # through anything that can reach chat. deploy-agent exposes exactly two
+  # fixed, parameterless operations (git pull; docker compose build+up
+  # orchestrator) with no other surface, and every real invocation is
+  # gated upstream by a human approval (the redeploy-jarvis bounded
+  # script is requires_approval, never auto_fix).
+  #
+  # JARVIS_HOST_REPO_PATH must be this repo's actual absolute path ON THE
+  # NUC (e.g. /home/alfred/jarvis-v2) — required, no default. It's bind-
+  # mounted at the SAME path inside this container on purpose: commands
+  # this container sends over the Docker socket run against the HOST
+  # daemon, which resolves file paths against the host filesystem, not
+  # this container's — mirroring the path is what makes `docker compose
+  # -f $JARVIS_HOST_REPO_PATH/docker-compose.yml ...` resolve correctly
+  # from both sides of that socket.
+  deploy-agent:
+    build: ./deploy-agent
+    restart: unless-stopped
+    environment:
+      JARVIS_HOST_REPO_PATH: ${JARVIS_HOST_REPO_PATH:?set this to this repo's absolute path on the NUC, e.g. /home/alfred/jarvis-v2}
+    volumes:
+      - ${JARVIS_HOST_REPO_PATH:-.}:${JARVIS_HOST_REPO_PATH:-/repo}
+      - /var/run/docker.sock:/var/run/docker.sock
+    # No `ports:` at all — reachable only from the orchestrator over the
+    # compose network (http://deploy-agent:8082), never the host, never a
+    # Cloudflare Tunnel hostname.
+
 volumes:
   jarvis_db_data:
   website_site:

@@ -104,11 +104,16 @@ since scripts can touch infrastructure (schema, bulk DB operations), a
 bigger blast radius than one capability handling one request. Adding a
 script is a code change that goes through review.
 
-Not yet built, and deliberately flagged rather than silently added:
-scripts needing host-level privilege (restarting the orchestrator
-container, `git pull` + rebuild). That needs its own decision on how much
-access to grant (e.g. Docker socket access is effectively root on the
-host) before it's wired up.
+Scripts needing host-level privilege (`git pull` + rebuild) are now
+built, on a decision deliberately deferred until it needed making:
+`redeploy-jarvis` restarts the orchestrator itself, and `apply-website-file`
+writes structural changes (templates, config, dependencies) to the
+website repo — both `requires_approval`, both executed via `deploy-agent`,
+a narrowly-scoped sidecar that is the *only* service anywhere in this
+stack holding Docker-socket access, specifically kept off the
+orchestrator itself since that's root-equivalent host access reachable
+through anything that can reach chat. See docs/architecture.md's
+"Website structural changes and self-deploy" section for the full design.
 
 ### Autonomous fix loop
 
@@ -166,9 +171,8 @@ Bearer-token gated (`JARVIS_DASHBOARD_TOKEN`).
 
 * No mid-conversation live relation computation (batch/scheduled only).
 * No auto-apply for anything structural or credential-related, regardless
-  of confidence.
-* JARVIS editing or deploying its own source code (host-level privilege)
-  — needs its own scoping decision first.
+  of confidence — self-deploy and structural website changes are real
+  now, but both stay `requires_approval`, never `auto_fix`.
 
 ## graphify
 

@@ -13,6 +13,10 @@ function b64(obj: unknown): string {
   return Buffer.from(JSON.stringify(obj, null, 2), "utf8").toString("base64");
 }
 
+function b64Text(text: string): string {
+  return Buffer.from(text, "utf8").toString("base64");
+}
+
 /** Routes fetch calls by "METHOD url" so each test only has to describe the calls it actually cares about. */
 function fakeFetch(routes: Record<string, () => Response | Promise<Response>>) {
   return vi.fn(async (input: string | URL, init?: RequestInit) => {
@@ -275,5 +279,87 @@ describe("farm-website module", () => {
 
     const result = await websiteModule.handle({ intent: "website.listContent", payload: {} }, ctx());
     expect(result).toEqual({ pages: [{ slug: "about", title: "About", sections: ["intro"] }] });
+  });
+
+  it("website.updateStyle replaces CSS inside a <style> block, leaving markup untouched", async () => {
+    const original = [
+      "---",
+      'const title = "Hero";',
+      "---",
+      "<h1>{title}</h1>",
+      "<style>",
+      "  .hero__image { object-fit: cover; }",
+      "</style>",
+    ].join("\n");
+    const path = "src/components/Hero.astro";
+    const getUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${path}?ref=main`;
+    const putUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${path}`;
+    let putBody: Record<string, unknown> | undefined;
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL, init?: RequestInit) => {
+        const method = init?.method ?? "GET";
+        const url = String(input);
+        if (method === "GET" && url === getUrl) return json({ sha: "sha-1", content: b64Text(original) });
+        if (method === "PUT" && url === putUrl) {
+          putBody = JSON.parse(String(init?.body));
+          return json({ content: { sha: "sha-2" } });
+        }
+        throw new Error(`unexpected fetch: ${method} ${url}`);
+      }),
+    );
+
+    const result = await websiteModule.handle(
+      {
+        intent: "website.updateStyle",
+        payload: { path, oldCss: "object-fit: cover;", newCss: "object-fit: cover; object-position: center 20%;" },
+      },
+      ctx(),
+    );
+
+    expect(result).toEqual({ updated: true, path, rebuildTriggered: false });
+    const written = Buffer.from(putBody!.content as string, "base64").toString("utf8");
+    expect(written).toContain("object-position: center 20%;");
+    expect(written).toContain('const title = "Hero";'); // markup/frontmatter untouched
+    expect(written).toContain("<h1>{title}</h1>");
+  });
+
+  it("website.updateStyle rejects when oldCss isn't found in the style block", async () => {
+    const original = "---\n---\n<div />\n<style>\n  .x { color: red; }\n</style>";
+    const path = "src/components/Nav.astro";
+    const getUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${path}?ref=main`;
+    vi.stubGlobal("fetch", fakeFetch({ [`GET ${getUrl}`]: () => json({ sha: "sha-1", content: b64Text(original) }) }));
+
+    await expect(
+      websiteModule.handle(
+        { intent: "website.updateStyle", payload: { path, oldCss: "color: blue;", newCss: "color: green;" } },
+        ctx(),
+      ),
+    ).rejects.toThrow(/wasn't found inside/);
+  });
+
+  it("website.updateStyle refuses a file with no <style> block", async () => {
+    const original = "---\nconst x = 1;\n---\n<div>{x}</div>";
+    const path = "src/pages/index.astro";
+    const getUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${path}?ref=main`;
+    vi.stubGlobal("fetch", fakeFetch({ [`GET ${getUrl}`]: () => json({ sha: "sha-1", content: b64Text(original) }) }));
+
+    await expect(
+      websiteModule.handle(
+        { intent: "website.updateStyle", payload: { path, oldCss: "const x = 1;", newCss: "const x = 2;" } },
+        ctx(),
+      ),
+    ).rejects.toThrow(/no <style> block/);
+  });
+
+  it("website.updateStyle 404s cleanly when the file doesn't exist", async () => {
+    const path = "src/styles/nope.css";
+    const getUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${path}?ref=main`;
+    vi.stubGlobal("fetch", fakeFetch({ [`GET ${getUrl}`]: () => json({ message: "Not Found" }, 404) }));
+
+    await expect(
+      websiteModule.handle({ intent: "website.updateStyle", payload: { path, oldCss: "a", newCss: "b" } }, ctx()),
+    ).rejects.toThrow(/does not exist/);
   });
 });

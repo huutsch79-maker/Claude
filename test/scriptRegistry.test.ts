@@ -3,7 +3,12 @@ import { getScript, listScripts, SCRIPTS } from "../src/core/scriptRegistry.js";
 
 describe("script registry", () => {
   it("only contains the explicitly registered scripts", () => {
-    expect(Object.keys(SCRIPTS).sort()).toEqual(["apply-migration", "vacuum-analyze"]);
+    expect(Object.keys(SCRIPTS).sort()).toEqual([
+      "apply-migration",
+      "apply-website-file",
+      "redeploy-jarvis",
+      "vacuum-analyze",
+    ]);
   });
 
   it("returns null for an unregistered script name instead of guessing", () => {
@@ -19,8 +24,47 @@ describe("script registry", () => {
     expect(getScript("apply-migration")?.trustTier).toBe("requires_approval");
   });
 
+  it("apply-website-file is requires_approval (can break the whole site's build)", () => {
+    expect(getScript("apply-website-file")?.trustTier).toBe("requires_approval");
+  });
+
+  it("redeploy-jarvis is requires_approval (restarts JARVIS itself)", () => {
+    expect(getScript("redeploy-jarvis")?.trustTier).toBe("requires_approval");
+  });
+
   it("listScripts returns every registered script", () => {
-    expect(listScripts().map((s) => s.name).sort()).toEqual(["apply-migration", "vacuum-analyze"]);
+    expect(listScripts().map((s) => s.name).sort()).toEqual([
+      "apply-migration",
+      "apply-website-file",
+      "redeploy-jarvis",
+      "vacuum-analyze",
+    ]);
+  });
+
+  it("apply-website-file rejects a path traversal attempt", async () => {
+    const script = getScript("apply-website-file")!;
+    await expect(
+      script.run({ pool: {} as never, args: { path: "../../etc/passwd", contentBase64: "AAAA" } }),
+    ).rejects.toThrow(/unsafe path/);
+  });
+
+  it("apply-website-file refuses to write into .github/", async () => {
+    const script = getScript("apply-website-file")!;
+    await expect(
+      script.run({ pool: {} as never, args: { path: ".github/workflows/deploy.yml", contentBase64: "AAAA" } }),
+    ).rejects.toThrow(/\.github/);
+  });
+
+  it("apply-website-file requires path and contentBase64 args", async () => {
+    const script = getScript("apply-website-file")!;
+    await expect(script.run({ pool: {} as never, args: {} })).rejects.toThrow(/requires args\.path/);
+    await expect(script.run({ pool: {} as never, args: { path: "x" } })).rejects.toThrow(/requires args\.contentBase64/);
+  });
+
+  it("redeploy-jarvis requires JARVIS_DEPLOY_AGENT_URL to be set", async () => {
+    const script = getScript("redeploy-jarvis")!;
+    delete process.env.JARVIS_DEPLOY_AGENT_URL;
+    await expect(script.run({ pool: {} as never, args: {} })).rejects.toThrow(/JARVIS_DEPLOY_AGENT_URL/);
   });
 
   it("apply-migration rejects a filename with a path separator (traversal attempt)", async () => {

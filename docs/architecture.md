@@ -413,6 +413,70 @@ human login; chat-driven edits through `farm-website` don't need it at
 all, since those authenticate with the static PAT directly, no OAuth
 handshake involved.
 
+## Website structural changes and self-deploy
+
+`farm-website`'s content/CSS intents (`updateSection`, `addPage`,
+`replacePhoto`, `updateStyle`) publish instantly, on the reasoning that
+they can only ever break one page at worst and never touch credentials
+or schema (see "Website module" above). Two things sit outside that
+reasoning, and both go through the existing bounded-script /
+`ApprovalGate` / Pushover / dashboard-approve flow instead — the same
+mechanism `apply-migration` already uses, reused rather than duplicated:
+
+- **`apply-website-file`** (`src/core/scriptRegistry.ts`) — creates or
+  overwrites any file in the website repo: `.astro` markup/logic,
+  `astro.config.mjs`, `src/content.config.ts`, `admin/config.yml`,
+  `package.json`, a brand new component. `requires_approval` because a
+  bad file here can break the whole site's build, not just one page's
+  content. Refuses any path under `.github/` outright — writing there
+  would mean granting CI code-execution capability, a different and
+  larger risk than "the website might look wrong," not something a
+  human approving "update this file" would necessarily be weighing.
+  `website.updateStyle` stays a separate, narrower, instant-publish path
+  specifically because it's mechanically confined to text inside a
+  `<style>...</style>` block (or a whole `.css` file) — it can change
+  colors, spacing, image cropping, but never markup, logic, or config,
+  which is what makes the no-approval-needed reasoning still hold for it
+  specifically, even though it's editing the same files
+  `apply-website-file` can also touch.
+
+- **`redeploy-jarvis`** — pulls latest JARVIS code and rebuilds/restarts
+  the orchestrator itself. `requires_approval` for an obvious reason:
+  this restarts the very process handling the chat that requested it,
+  and a bad pull/build takes JARVIS offline with no way to fix itself —
+  recovering needs direct NUC access (SSH), the same as any other broken
+  deploy. This was flagged as an open, deliberately-undecided question
+  earlier in this doc ("host-level privilege... needs its own decision
+  on how much access to grant") — the decision made was: give it, but
+  only through a narrowly-scoped sidecar, never directly to orchestrator.
+
+**`deploy-agent`** (`deploy-agent/`) is that sidecar, and the *only*
+service in `docker-compose.yml` with Docker-socket access anywhere in
+this stack — deliberately never added to `orchestrator`, since raw
+socket access is root-equivalent on the host and orchestrator is exactly
+the process reachable through chat. `deploy-agent` exposes exactly two
+fixed, parameterless operations over a Docker-network-only HTTP endpoint
+(never a host port, never a Cloudflare Tunnel hostname, same pattern as
+`website-server`'s rebuild endpoint): `git pull`, then `docker compose
+build && up -d` for `orchestrator` specifically. No request body is ever
+read, so there is no way to make it run anything other than exactly
+that sequence — the safety here is "there is nothing else this service
+can be asked to do," not an auth check. `JARVIS_HOST_REPO_PATH` is
+bind-mounted at the *same* path inside the container as on the host: the
+commands `deploy-agent` sends over the Docker socket execute against the
+host daemon, which resolves file paths against the host filesystem, not
+the container's — mirroring the path is what makes `docker compose -f
+$JARVIS_HOST_REPO_PATH/docker-compose.yml` resolve correctly from both
+sides of that socket (the standard "Docker-outside-of-Docker" pattern).
+
+Because step 3 of a redeploy restarts the very container that (via the
+approved `redeploy-jarvis` script) asked for it, `deploy-agent` responds
+`202 Accepted` immediately and runs the actual sequence in the
+background — the caller's process may not survive to receive a
+synchronous result. `GET /internal/last-redeploy` on `deploy-agent`
+holds the outcome of the most recent attempt for whoever (human or a
+later chat turn) wants to check afterward.
+
 ## Ops dashboard
 
 `public/index.html` (served by `src/orchestrator/dashboard.ts`) is a
