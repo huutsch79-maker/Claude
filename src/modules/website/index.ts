@@ -2,7 +2,7 @@ import type { CapabilityContext, CapabilityModule } from "../../domain/capabilit
 import { describeFailedResponse } from "../../domain/httpError.js";
 
 export type WebsiteRequest =
-  | { intent: "website.updateSection"; payload: { page: string; section: string; heading?: string; body: string; photo?: string } }
+  | { intent: "website.updateSection"; payload: { page: string; section: string; heading?: string; body?: string; photo?: string } }
   | { intent: "website.addPage"; payload: { slug: string; title: string; sections?: Record<string, PageSection> } }
   | { intent: "website.replacePhoto"; payload: { path: string; attachmentIndex?: number } }
   | { intent: "website.listContent"; payload: Record<string, never> };
@@ -155,7 +155,14 @@ const websiteModule: CapabilityModule = {
         throw new Error(`farm-website: page "${slug}" does not exist — use website.addPage to create it first.`);
       }
       const prior = existing.page.sections[section];
-      existing.page.sections[section] = { heading: heading ?? prior?.heading, body, photo: photo ?? prior?.photo };
+      const resolvedBody = body ?? prior?.body;
+      if (resolvedBody === undefined) {
+        throw new Error(
+          `farm-website: section "${section}" on page "${slug}" doesn't exist yet, so "body" is required to create ` +
+            `it — there is no prior text to leave unchanged.`,
+        );
+      }
+      existing.page.sections[section] = { heading: heading ?? prior?.heading, body: resolvedBody, photo: photo ?? prior?.photo };
       await putPage(slug, existing.page, `website: update ${slug}/${section} via JARVIS chat`, existing.sha, token);
       const rebuilt = await triggerRebuild();
       return { updated: true, page: slug, section, rebuildTriggered: rebuilt };

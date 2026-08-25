@@ -17,7 +17,7 @@ export const websiteManifest = {
     request: {
       intent: "'website.updateSection' | 'website.addPage' | 'website.replacePhoto' | 'website.listContent'",
       payload:
-        "website.updateSection: { page: string, section: string, heading?: string, body: string, photo?: string }. " +
+        "website.updateSection: { page: string, section: string, heading?: string, body?: string, photo?: string }. " +
         "website.addPage: { slug: string, title: string, sections?: { [key]: { heading?: string, body: string, photo?: string } } }. " +
         "website.replacePhoto: { path: string, attachmentIndex?: number }. " +
         "website.listContent: {}",
@@ -27,9 +27,12 @@ export const websiteManifest = {
     "You can edit the content of waikatohighlands.com — changes go live immediately, there is no separate " +
     'publish/approval step, so only make the exact change asked for. Call with intent exactly "website.updateSection" ' +
     'and payload {"page": "<page slug, e.g. \\"about\\">", "section": "<section key>", "heading": "<optional new heading>", ' +
-    '"body": "<new section text>", "photo": "<optional path under photos/, e.g. \\"farm/mob-1.jpg\\", pointing this ' +
-    'section at a photo>"} to change an existing page\'s section — the page must already exist (use ' +
-    '"website.addPage" first if it does not). Setting "photo" only points the section at that path; upload the ' +
+    '"body": "<optional new section text>", "photo": "<optional path under photos/, e.g. \\"farm/mob-1.jpg\\", pointing ' +
+    'this section at a photo>"} to change an existing page\'s section — the page must already exist (use ' +
+    '"website.addPage" first if it does not). Just like "heading" and "photo", omit "body" entirely to leave the ' +
+    'existing text unchanged — do not resend it verbatim just to "confirm" it; only include "body" when you are ' +
+    "actually changing that text (a new section being created for the first time still needs it, since there is " +
+    'nothing to fall back to). Setting "photo" only points the section at that path; upload the ' +
     'actual image separately with "website.replacePhoto" using the same path. Call with intent exactly ' +
     '"website.addPage" and payload {"slug": "<new page slug>", "title": "<page title>", "sections": {"<key>": ' +
     '{"heading": "<...>", "body": "<...>", "photo": "<optional path>"}}} to create a brand new page — fails if ' +
