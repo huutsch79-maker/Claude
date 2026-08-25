@@ -139,7 +139,7 @@ describe("ChatService", () => {
     expect(oauth.getValidToken).toHaveBeenCalledWith("test-cred");
     expect(handleSpy).toHaveBeenCalledWith(
       { intent: "x", payload: {} },
-      { credential: { ref: "test-cred", value: "oauth-token", expiresAt: null } },
+      { credential: { ref: "test-cred", value: "oauth-token", expiresAt: null }, attachments: [] },
     );
   });
 
@@ -166,7 +166,7 @@ describe("ChatService", () => {
     const result = await chat.converse("session-1", "please do the thing");
     expect(result.reply).toBe("done");
     expect(result.toolCalls).toEqual([{ capability: "test-capability", ok: true, summary: "handled by test-capability" }]);
-    expect(fakeModule.handle).toHaveBeenCalledWith({ intent: "do.thing", payload: {} }, { credential: null });
+    expect(fakeModule.handle).toHaveBeenCalledWith({ intent: "do.thing", payload: {} }, { credential: null, attachments: [] });
   });
 
   it("records a failed tool call (e.g. missing credential) without crashing the turn", async () => {
@@ -277,6 +277,19 @@ describe("ChatService", () => {
     const content = params.messages[0]!.content as Anthropic.ContentBlockParam[];
     expect(content[0]).toMatchObject({ type: "image", source: { type: "base64", media_type: "image/png", data: "AAAA" } });
     expect(content[1]).toMatchObject({ type: "text", text: "what is this" });
+  });
+
+  it("passes the current turn's attachments through to the capability context", async () => {
+    const { chat, registry } = buildHarness([
+      toolUseMessage("tu_1", "test-capability", { intent: "do.thing", payload: {} }),
+      textMessage("done"),
+    ]);
+    const handleSpy = vi.fn(async () => ({ ok: true }));
+    registry.loadModule = vi.fn(async () => ({ canHandle: () => true, handle: handleSpy })) as never;
+
+    const attachment = { mediaType: "image/png", base64Data: "AAAA", filename: "photo.png" };
+    await chat.converse("session-1", "use this photo", [attachment]);
+    expect(handleSpy).toHaveBeenCalledWith({ intent: "do.thing", payload: {} }, { credential: null, attachments: [attachment] });
   });
 
   it("runs an auto_fix script immediately via the run_script tool", async () => {

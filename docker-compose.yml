@@ -36,5 +36,32 @@ services:
       # this beyond a trusted home network.
       - "4570:4570"
 
+  # Serves waikatohighlands.com and rebuilds it on demand — see
+  # docs/architecture.md "Website module". Content and the Astro/Sveltia
+  # CMS site code live in a separate GitHub repo (WEBSITE_GITHUB_REPO),
+  # cloned into the website_site volume at startup and re-pulled whenever
+  # the farm-website module or the CMS admin commits a change.
+  website:
+    build: ./website-server
+    restart: unless-stopped
+    environment:
+      WEBSITE_GITHUB_REPO: ${JARVIS_WEBSITE_GITHUB_REPO:-}
+      WEBSITE_GITHUB_BRANCH: ${JARVIS_WEBSITE_GITHUB_BRANCH:-main}
+      WEBSITE_GITHUB_TOKEN: ${JARVIS_CRED_WEBSITE_GITHUB:-}
+    volumes:
+      - website_site:/data/site
+    ports:
+      # Loopback-only, same reasoning as db's binding below: this assumes
+      # cloudflared runs directly on the NUC (the common setup) and reaches
+      # the public site over localhost. If cloudflared instead runs as
+      # another container on this same compose network, drop this
+      # `ports:` block entirely — it can already reach this service at
+      # http://website:8080 by service name, no host port needed. Either
+      # way, port 8081 (the internal rebuild webhook) is never published
+      # here — the orchestrator reaches it over the compose network only,
+      # and it must never get a Cloudflare Tunnel hostname of its own.
+      - "127.0.0.1:8080:8080"
+
 volumes:
   jarvis_db_data:
+  website_site:

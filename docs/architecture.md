@@ -323,6 +323,96 @@ mode was considered and explicitly rejected — see the "Bounded script
 execution" section above on why host-level deploy privilege stays a
 separate, deliberate decision.
 
+## Public exposure (Cloudflare Tunnel)
+
+`jarvis.waikatohighlands.com` reaches the orchestrator's dashboard from
+outside the home network through a Cloudflare Tunnel already configured
+on the Cloudflare account that owns `waikatohighlands.com` — DNS for the
+whole domain lives there. This was set up directly in the Cloudflare
+dashboard, not through this repo, so it's written down here now that
+it's been confirmed once, rather than relying on memory across sessions.
+
+Adding another public hostname on the same tunnel (e.g. for the website
+below) is a Cloudflare dashboard action, not a code change: Zero Trust →
+Networks → Tunnels → the existing tunnel → **Public Hostname** → Add a
+public hostname → hostname `waikatohighlands.com` (leave the subdomain
+field blank for the root domain) → service `HTTP` → URL `localhost:8080`
+(or `website:8080` if cloudflared itself runs as a container on this
+same docker-compose network rather than directly on the NUC — see the
+`website` service's port comment in `docker-compose.yml`). No new DNS
+registration or port-forwarding needed; the tunnel already owns ingress
+for the whole domain.
+
+## Website module
+
+A dynamic module (`farm-website`, category `farm`) that lets chat edit
+waikatohighlands.com directly — "swap this photo," "update the About
+text" — with changes going live immediately, no separate approval step.
+It follows the same two-tier pattern as every other dynamic module
+(`src/modules/hotmail/` is the template), but is the first one that also
+needs its own long-running service to actually serve something, rather
+than just calling an external API.
+
+**Why the content lives in a separate repo.** `waikatohighlands-website`
+(GitHub) holds the Astro site, its content, and the Sveltia CMS admin —
+deliberately not a directory in this repo. Two reasons: blast radius (a
+credential scoped to that repo can never touch JARVIS's own source, and
+vice versa — same reasoning every other `credential_ref` already stays
+separate), and audience (a family member editing a photo through the CMS
+admin has no reason to see or touch JARVIS's code, and shouldn't need
+access to this repo to do it).
+
+**How an edit gets from chat to the live site.**
+1. Chat calls `farm-website` with one of `website.updateSection`,
+   `website.addPage`, `website.replacePhoto`, `website.listContent`
+   (`src/modules/website/index.ts`).
+2. The module commits the change directly to the content repo via
+   GitHub's Contents API — the exact same API the Sveltia CMS admin
+   uses, so a chat-driven edit and a human editing through the CMS UI
+   are just two contributors to the same git history, never in conflict.
+3. `website.replacePhoto` is the one intent that can't work purely from
+   the model's tool-call JSON: Claude sees an attached image as vision
+   input, and can't reliably re-emit its raw base64 bytes as a tool
+   argument. So `CapabilityContext` now also carries the current turn's
+   raw `attachments` (`src/domain/capabilityRegistry.ts`), threaded
+   through from `ChatService.converse()` — a small, generic extension
+   any future capability needing an uploaded file can reuse, not
+   something specific to photos.
+4. After a successful commit, the module POSTs to the `website-server`
+   container's internal rebuild endpoint (`JARVIS_WEBSITE_REBUILD_URL`)
+   so the live site updates right away instead of waiting for a
+   scheduled rebuild. This is a best-effort side effect, not gated by
+   ApprovalGate/trust tiers the way self-heal actions are — publishing
+   an edit the user just asked for in chat carries none of the risk
+   those tiers exist for (no credential or schema is touched), so
+   there's no separate approval step to wait for.
+
+**`website-server/`** (its own Dockerfile and `package.json`, not part
+of the orchestrator's build) is what actually serves the site: on start,
+and on every `/internal/rebuild` call, it pulls the content repo into a
+volume, runs the Astro build, and serves the static output.
+`/internal/rebuild` listens on a second port (8081) that is never
+published to the host and never given a Cloudflare Tunnel hostname — the
+docker-compose network boundary is its actual security, the same
+reasoning `db`'s `127.0.0.1`-only bind relies on, not an auth check on
+the route itself.
+
+**Stack choices, and why.** Astro (content collections read straight
+from the repo's files, built-in image optimization, supports real
+interactive components without giving up static-site speed) plus
+Sveltia CMS (an actively-maintained, git-based headless CMS that runs
+entirely client-side with no server of its own — the modern successor
+to Netlify/Decap CMS). Both are established open source projects rather
+than something built from scratch here.
+
+**Follow-up, not yet done:** Sveltia CMS's GitHub login needs a small
+OAuth proxy (it can't complete GitHub's OAuth handshake purely
+client-side) — noted in `waikatohighlands-website/README.md` as a next
+step, not wired up yet. Until then the CMS admin UI isn't usable for a
+human login; chat-driven edits through `farm-website` don't need it at
+all, since those authenticate with the static PAT directly, no OAuth
+handshake involved.
+
 ## Ops dashboard
 
 `public/index.html` (served by `src/orchestrator/dashboard.ts`) is a

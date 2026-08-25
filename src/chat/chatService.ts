@@ -154,7 +154,7 @@ export class ChatService {
           continue;
         }
 
-        const outcome = await this.runCapability(capabilitiesByName.get(block.name), block.name, block.input);
+        const outcome = await this.runCapability(capabilitiesByName.get(block.name), block.name, block.input, attachments);
         toolResults.push({ type: "tool_result", tool_use_id: block.id, content: outcome.content, is_error: !outcome.ok });
         toolCalls.push({ capability: block.name, ok: outcome.ok, summary: outcome.summary });
         if (!outcome.ok) {
@@ -180,6 +180,7 @@ export class ChatService {
     row: CapabilityRow | undefined,
     name: string,
     input: unknown,
+    attachments: ChatAttachment[],
   ): Promise<{ ok: boolean; content: string; summary: string }> {
     if (!row) {
       return { ok: false, content: `unknown capability "${name}"`, summary: `unknown capability "${name}"` };
@@ -187,7 +188,7 @@ export class ChatService {
     try {
       const credential = row.credentialRef ? await this.resolveCredential(row.credentialRef) : null;
       const module = await this.registry.loadModule(row);
-      const result = await module.handle(input, { credential });
+      const result = await module.handle(input, { credential, attachments });
       return { ok: true, content: JSON.stringify(result), summary: `handled by ${row.name}` };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

@@ -63,6 +63,16 @@ Disabling a module = flip `enabled` to false. Removing a module = delete
 its registry row; memory entries are not owned per-module and stay
 intact.
 
+One dynamic module, `farm-website`, is a website manager for
+waikatohighlands.com rather than an external-API adapter: chat edits
+(swap a photo, update a page) commit straight to a separate GitHub
+content repo and go live immediately — no separate approval step, since
+it only ever touches public marketing content, never credentials or
+schema. See docs/architecture.md's "Website module" section for the
+repo split, the instant-publish flow, and how it's served (a small
+`website-server` container, reached through the same Cloudflare Tunnel
+already serving `jarvis.waikatohighlands.com`).
+
 **Tenant insight modules stay read-only.** `nzb-m365-usage-report` and
 `nzb-azure-cost-insights` (see docs/architecture.md) exist to answer cost
 and usage questions and flag likely cleanup candidates — never to act on

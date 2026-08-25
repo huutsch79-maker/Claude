@@ -1,0 +1,17 @@
+{
+  "name": "jarvis-website-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Serves waikatohighlands.com's static build and exposes an internal-only pull+rebuild webhook for the farm-website JARVIS module. See docs/architecture.md's Website module section.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}

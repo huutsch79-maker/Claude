@@ -4,6 +4,7 @@ import { hotmailManifest } from "../src/modules/hotmail/manifest.js";
 import { nzbConnectorManifest } from "../src/modules/nzb-connector/manifest.js";
 import { nzbUsageReportManifest } from "../src/modules/nzb-usage-report/manifest.js";
 import { nzbAzureInsightsManifest } from "../src/modules/nzb-azure-insights/manifest.js";
+import { websiteManifest } from "../src/modules/website/manifest.js";
 
 /**
  * Seeds the capabilities table with the starter dynamic modules. Run once
@@ -17,8 +18,9 @@ async function seed(): Promise<void> {
     await upsertCapability(pool, hotmailManifest);
     await upsertCapability(pool, nzbUsageReportManifest);
     await upsertCapability(pool, nzbAzureInsightsManifest);
+    await upsertCapability(pool, websiteManifest);
     console.log(
-      "Seeded nzb-m365-connector, hotmail-outlook, nzb-m365-usage-report, and nzb-azure-cost-insights.",
+      "Seeded nzb-m365-connector, hotmail-outlook, nzb-m365-usage-report, nzb-azure-cost-insights, and farm-website.",
     );
   } finally {
     await pool.end();

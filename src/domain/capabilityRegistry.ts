@@ -25,9 +25,26 @@ export interface CapabilityRow {
   modulePath: string;
 }
 
+/** Structurally identical to chat/chatService.ts's ChatAttachment — defined here too, not imported, so this lower-level domain file never depends on the chat layer above it. */
+export interface CapabilityAttachment {
+  mediaType: string;
+  base64Data: string;
+  filename?: string;
+}
+
 export interface CapabilityContext {
   /** The credential this capability's registry row points to, resolved just-in-time. */
   credential: { ref: string; value: string; expiresAt: string | null } | null;
+  /**
+   * Whatever files the user attached to the current chat turn — always
+   * populated, empty when there were none. Exists so a capability can
+   * store an uploaded photo/PDF directly (e.g. the website module writing
+   * a replaced photo to its content repo) without the model having to
+   * re-emit the raw base64 bytes inside a tool-call argument, which it
+   * cannot reliably do for image content it only ever receives as vision
+   * input.
+   */
+  attachments: CapabilityAttachment[];
 }
 
 export interface CapabilityModule {
