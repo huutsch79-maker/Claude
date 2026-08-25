@@ -58,6 +58,27 @@ export class OAuthCredentialStore {
   }
 
   /**
+   * Whether a token already exists for `ref` — distinct from isConfigured,
+   * which only checks that an OAuth app config is present in env, not that
+   * anyone has actually completed consent. Lets the dashboard show
+   * "Connected" instead of leaving a stale "Connect" button up forever.
+   * Deliberately just a row check, not getValidToken: this is a cheap
+   * status read for rendering a list, not a credential fetch, and it
+   * should never trigger a refresh call to Microsoft as a side effect of
+   * loading the sidebar. Fails soft to false for the same reason
+   * getValidToken does — a DB hiccup here must never look like "broken,"
+   * only like "not yet connected."
+   */
+  async isConnected(ref: string): Promise<boolean> {
+    try {
+      const result = await this.pool.query(`select 1 from jarvis.oauth_credentials where credential_ref = $1`, [ref]);
+      return (result.rowCount ?? 0) > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Issues a one-time, short-lived state token and returns the URL to send
    * the browser to. The state is what makes the later callback trustworthy
    * — Microsoft's redirect back has no bearer token on it, so the state

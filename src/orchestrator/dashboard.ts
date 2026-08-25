@@ -90,8 +90,8 @@ export function createDashboardServer(orchestrator: Orchestrator): Server {
 
   app.get("/api/capabilities", async (_req, res) => {
     const rows = await jarvis.registry.list();
-    res.json(
-      rows.map((r) => ({
+    const withCaps = await Promise.all(
+      rows.map(async (r) => ({
         name: r.name,
         category: r.category,
         enabled: r.enabled,
@@ -99,8 +99,10 @@ export function createDashboardServer(orchestrator: Orchestrator): Server {
         credentialRef: r.credentialRef,
         modelOverride: r.modelOverride,
         oauthConfigured: r.credentialRef ? jarvis.oauthCredentials.isConfigured(r.credentialRef) : false,
+        oauthConnected: r.credentialRef ? await jarvis.oauthCredentials.isConnected(r.credentialRef) : false,
       })),
     );
+    res.json(withCaps);
   });
 
   app.post("/api/capabilities/:name/enabled", async (req, res) => {

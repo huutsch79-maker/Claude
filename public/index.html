@@ -442,9 +442,10 @@ async function renderSidebar() {
       ]));
       const right = el("div", { class: "btn-row" });
       if (c.oauthConfigured) {
+        if (c.oauthConnected) right.appendChild(badge("Connected", "valid"));
         right.appendChild(el("button", {
           class: "tiny",
-          text: "Connect",
+          text: c.oauthConnected ? "Reconnect" : "Connect",
           onclick: async () => {
             try {
               const { url } = await api(`/api/oauth/${encodeURIComponent(c.credentialRef)}/authorize-url`);
