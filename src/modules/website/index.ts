@@ -6,7 +6,10 @@ export type WebsiteRequest =
   | { intent: "website.addPage"; payload: { slug: string; title: string; sections?: Record<string, PageSection> } }
   | { intent: "website.replacePhoto"; payload: { path: string; attachmentIndex?: number } }
   | { intent: "website.updateStyle"; payload: { path: string; oldCss: string; newCss: string } }
+  | { intent: "website.readFile"; payload: { path: string } }
   | { intent: "website.listContent"; payload: Record<string, never> };
+
+const READ_FILE_MAX_CHARS = 8000;
 
 interface PageSection {
   heading?: string;
@@ -101,6 +104,7 @@ const websiteModule: CapabilityModule = {
       req?.intent === "website.addPage" ||
       req?.intent === "website.replacePhoto" ||
       req?.intent === "website.updateStyle" ||
+      req?.intent === "website.readFile" ||
       req?.intent === "website.listContent"
     );
   },
@@ -204,6 +208,22 @@ const websiteModule: CapabilityModule = {
       return { updated: true, path, rebuildTriggered: rebuilt };
     }
 
+    if (req.intent === "website.readFile") {
+      const { path } = req.payload;
+      const file = await getFile(websiteRepoRef(), path, token);
+      if (!file) throw new Error(`farm-website: "${path}" does not exist in the website repo.`);
+      const text = Buffer.from(file.contentBase64, "base64").toString("utf8");
+      if (text.length > READ_FILE_MAX_CHARS) {
+        return {
+          path,
+          content: text.slice(0, READ_FILE_MAX_CHARS),
+          truncated: true,
+          note: `truncated at ${READ_FILE_MAX_CHARS} of ${text.length} characters — ask for a narrower file or a specific section if you need what's past this point`,
+        };
+      }
+      return { path, content: text, truncated: false };
+    }
+
     if (req.intent === "website.listContent") {
       const entries = await listDir(websiteRepoRef(), CONTENT_DIR, token);
       const slugs = entries.filter((e) => e.name.endsWith(".json")).map((e) => e.name.replace(/\.json$/, ""));
@@ -221,7 +241,7 @@ const websiteModule: CapabilityModule = {
     // nzb-m365-connector (see their index.ts files).
     throw new Error(
       `farm-website: unsupported intent "${(req as { intent?: string }).intent}" — must be one of ` +
-        `"website.updateSection", "website.addPage", "website.replacePhoto", "website.updateStyle", "website.listContent"`,
+        `"website.updateSection", "website.addPage", "website.replacePhoto", "website.updateStyle", "website.readFile", "website.listContent"`,
     );
   },
 };

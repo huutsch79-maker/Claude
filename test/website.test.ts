@@ -362,4 +362,38 @@ describe("farm-website module", () => {
       websiteModule.handle({ intent: "website.updateStyle", payload: { path, oldCss: "a", newCss: "b" } }, ctx()),
     ).rejects.toThrow(/does not exist/);
   });
+
+  it("website.readFile returns a file's raw content so JARVIS can find exact text itself instead of asking the user", async () => {
+    const path = "src/styles/global.css";
+    const text = ":root {\n  --accent: #a67c3d;\n}\n";
+    const getUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${path}?ref=main`;
+    vi.stubGlobal("fetch", fakeFetch({ [`GET ${getUrl}`]: () => json({ sha: "sha-1", content: b64Text(text) }) }));
+
+    const result = await websiteModule.handle({ intent: "website.readFile", payload: { path } }, ctx());
+    expect(result).toEqual({ path, content: text, truncated: false });
+  });
+
+  it("website.readFile 404s cleanly on a missing file", async () => {
+    const path = "src/nope.css";
+    const getUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${path}?ref=main`;
+    vi.stubGlobal("fetch", fakeFetch({ [`GET ${getUrl}`]: () => json({ message: "Not Found" }, 404) }));
+
+    await expect(websiteModule.handle({ intent: "website.readFile", payload: { path } }, ctx())).rejects.toThrow(
+      /does not exist/,
+    );
+  });
+
+  it("website.readFile truncates a very large file rather than returning it whole or erroring", async () => {
+    const path = "src/big.css";
+    const text = "a".repeat(9000);
+    const getUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${path}?ref=main`;
+    vi.stubGlobal("fetch", fakeFetch({ [`GET ${getUrl}`]: () => json({ sha: "sha-1", content: b64Text(text) }) }));
+
+    const result = (await websiteModule.handle({ intent: "website.readFile", payload: { path } }, ctx())) as {
+      content: string;
+      truncated: boolean;
+    };
+    expect(result.truncated).toBe(true);
+    expect(result.content.length).toBe(8000);
+  });
 });

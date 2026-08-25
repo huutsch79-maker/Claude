@@ -16,12 +16,14 @@ export const websiteManifest = {
   schema_def: {
     request: {
       intent:
-        "'website.updateSection' | 'website.addPage' | 'website.replacePhoto' | 'website.updateStyle' | 'website.listContent'",
+        "'website.updateSection' | 'website.addPage' | 'website.replacePhoto' | 'website.updateStyle' | " +
+        "'website.readFile' | 'website.listContent'",
       payload:
         "website.updateSection: { page: string, section: string, heading?: string, body?: string, photo?: string }. " +
         "website.addPage: { slug: string, title: string, sections?: { [key]: { heading?: string, body: string, photo?: string } } }. " +
         "website.replacePhoto: { path: string, attachmentIndex?: number }. " +
         "website.updateStyle: { path: string, oldCss: string, newCss: string }. " +
+        "website.readFile: { path: string }. " +
         "website.listContent: {}",
     },
   },
@@ -47,18 +49,23 @@ export const websiteManifest = {
     '{"path": "<file, e.g. \\"src/components/Hero.astro\\" or a .css file>", "oldCss": "<exact existing CSS text>", ' +
     '"newCss": "<its replacement>"} for a pure visual/CSS tweak (colors, spacing, image cropping, sizing) — this ' +
     "also publishes instantly, since it can only ever touch CSS inside a <style> block, never markup or logic. " +
-    '"oldCss" must match exactly (fetch the file\'s current content first if unsure, or ask the user to describe ' +
-    "what to change rather than guessing the current text). Call with intent exactly \"website.listContent\" and " +
-    "payload {} to see what pages and sections currently exist before editing, rather than guessing page/section " +
-    "names. Any other intent value is rejected.\n\n" +
+    '"oldCss" must match the file\'s actual current text exactly, byte for byte — never guess it or assume it from ' +
+    'memory. Before calling "website.updateStyle" (or before writing "contentBase64" for "apply-website-file" ' +
+    'below), call "website.readFile" with payload {"path": "<file path>"} to fetch that file\'s real current content ' +
+    "first; only ask the user to paste something themselves if you don't yet know which file the thing they're " +
+    'describing actually lives in. Call with intent exactly "website.listContent" and payload {} to see what pages ' +
+    "and sections currently exist before editing, rather than guessing page/section names. Any other intent value " +
+    "is rejected.\n\n" +
     "Anything beyond content and CSS — page markup/logic (.astro files' frontmatter or template), " +
     "astro.config.mjs, the content schema, admin/config.yml, package.json, or any new/deleted file — is NOT " +
     'available through this capability at all. Use the run_script tool instead, with name "apply-website-file" ' +
     'and args {"path": "<file path in the site repo>", "contentBase64": "<the full new file content, base64-encoded>"}. ' +
-    "That always queues for human approval before it goes live (unlike everything above, which is instant) — a bad " +
-    "file there can break the whole site's build, not just one page, so tell the user it's pending approval rather " +
-    "than implying it's already live. Never try to approximate a structural change (a new page layout, a new " +
-    'component, a dependency bump) through "website.updateSection" or "website.updateStyle" — use ' +
+    'contentBase64 must be the file\'s ENTIRE new content, not a diff or a fragment — read the current content with ' +
+    '"website.readFile" first when editing an existing file, apply your change to it, then base64-encode the whole ' +
+    "result. That always queues for human approval before it goes live (unlike everything above, which is instant) " +
+    "— a bad file there can break the whole site's build, not just one page, so tell the user it's pending approval " +
+    "rather than implying it's already live. Never try to approximate a structural change (a new page layout, a " +
+    'new component, a dependency bump) through "website.updateSection" or "website.updateStyle" — use ' +
     '"apply-website-file" for all of it.',
   tool_config: { provider: "github-contents-api", scopes: ["contents:write"] },
   model_override: null,
