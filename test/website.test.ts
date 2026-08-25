@@ -86,6 +86,35 @@ describe("farm-website module", () => {
     expect(written).toEqual({ title: "About", sections: { intro: { heading: "Hi", body: "new text" } } });
   });
 
+  it("website.updateSection points a section at a photo path without touching other sections", async () => {
+    const existingPage = { title: "Farm", sections: { mob1: { heading: "Mob One", body: "text" } } };
+    const getUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/src/content/pages/farm.json?ref=main`;
+    const putUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/src/content/pages/farm.json`;
+    let putBody: Record<string, unknown> | undefined;
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL, init?: RequestInit) => {
+        const method = init?.method ?? "GET";
+        const url = String(input);
+        if (method === "GET" && url === getUrl) return json({ sha: "sha-1", content: b64(existingPage) });
+        if (method === "PUT" && url === putUrl) {
+          putBody = JSON.parse(String(init?.body));
+          return json({ content: { sha: "sha-2" } });
+        }
+        throw new Error(`unexpected fetch: ${method} ${url}`);
+      }),
+    );
+
+    await websiteModule.handle(
+      { intent: "website.updateSection", payload: { page: "farm", section: "mob1", body: "text", photo: "farm/mob-1.jpg" } },
+      ctx(),
+    );
+
+    const written = JSON.parse(Buffer.from(putBody!.content as string, "base64").toString("utf8"));
+    expect(written).toEqual({ title: "Farm", sections: { mob1: { heading: "Mob One", body: "text", photo: "farm/mob-1.jpg" } } });
+  });
+
   it("website.updateSection refuses to guess a page into existence", async () => {
     const getUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/src/content/pages/nope.json?ref=main`;
     vi.stubGlobal("fetch", fakeFetch({ [`GET ${getUrl}`]: () => json({ message: "Not Found" }, 404) }));

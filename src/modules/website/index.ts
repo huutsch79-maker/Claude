@@ -2,7 +2,7 @@ import type { CapabilityContext, CapabilityModule } from "../../domain/capabilit
 import { describeFailedResponse } from "../../domain/httpError.js";
 
 export type WebsiteRequest =
-  | { intent: "website.updateSection"; payload: { page: string; section: string; heading?: string; body: string } }
+  | { intent: "website.updateSection"; payload: { page: string; section: string; heading?: string; body: string; photo?: string } }
   | { intent: "website.addPage"; payload: { slug: string; title: string; sections?: Record<string, PageSection> } }
   | { intent: "website.replacePhoto"; payload: { path: string; attachmentIndex?: number } }
   | { intent: "website.listContent"; payload: Record<string, never> };
@@ -10,6 +10,8 @@ export type WebsiteRequest =
 interface PageSection {
   heading?: string;
   body: string;
+  /** Relative path under public/photos/, e.g. "farm/mob-1.jpg" — set this, then use website.replacePhoto with the same path to upload the actual bytes (two separate steps: pointing a section at a photo vs. the photo existing are independent). */
+  photo?: string;
 }
 
 interface PageContent {
@@ -120,13 +122,13 @@ const websiteModule: CapabilityModule = {
     const token = ctx.credential.value;
 
     if (req.intent === "website.updateSection") {
-      const { page: slug, section, heading, body } = req.payload;
+      const { page: slug, section, heading, body, photo } = req.payload;
       const existing = await getPage(slug, token);
       if (!existing) {
         throw new Error(`farm-website: page "${slug}" does not exist — use website.addPage to create it first.`);
       }
       const prior = existing.page.sections[section];
-      existing.page.sections[section] = { heading: heading ?? prior?.heading, body };
+      existing.page.sections[section] = { heading: heading ?? prior?.heading, body, photo: photo ?? prior?.photo };
       await putPage(slug, existing.page, `website: update ${slug}/${section} via JARVIS chat`, existing.sha, token);
       const rebuilt = await triggerRebuild();
       return { updated: true, page: slug, section, rebuildTriggered: rebuilt };
