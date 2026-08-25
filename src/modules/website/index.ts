@@ -19,6 +19,33 @@ interface PageContent {
   sections: Record<string, PageSection>;
 }
 
+/**
+ * On-disk shape differs from PageContent on purpose: Sveltia/Decap CMS's
+ * "list" widget (used in admin/config.yml so a human can add/reorder/edit
+ * sections visually) needs each item to have a fixed set of fields,
+ * including its own key — it can't bind to an arbitrary keyed map. Chat's
+ * payload shape stays the more ergonomic Record<string, PageSection>
+ * (see WebsiteRequest above); only the file on disk uses the list form,
+ * converted at the read/write boundary below.
+ */
+interface StoredSection extends PageSection {
+  key: string;
+}
+interface StoredPageContent {
+  title: string;
+  sections: StoredSection[];
+}
+
+function fromStored(stored: StoredPageContent): PageContent {
+  const sections: Record<string, PageSection> = {};
+  for (const { key, ...section } of stored.sections) sections[key] = section;
+  return { title: stored.title, sections };
+}
+
+function toStored(page: PageContent): StoredPageContent {
+  return { title: page.title, sections: Object.entries(page.sections).map(([key, section]) => ({ key, ...section })) };
+}
+
 const GITHUB_API = "https://api.github.com";
 const CONTENT_DIR = "src/content/pages";
 const PHOTOS_DIR = "public/photos";
@@ -61,12 +88,12 @@ async function putFile(path: string, contentBase64: string, message: string, sha
 async function getPage(slug: string, token: string): Promise<{ sha: string; page: PageContent } | null> {
   const file = await getFile(`${CONTENT_DIR}/${slug}.json`, token);
   if (!file) return null;
-  const page = JSON.parse(Buffer.from(file.contentBase64, "base64").toString("utf8")) as PageContent;
-  return { sha: file.sha, page };
+  const stored = JSON.parse(Buffer.from(file.contentBase64, "base64").toString("utf8")) as StoredPageContent;
+  return { sha: file.sha, page: fromStored(stored) };
 }
 
 async function putPage(slug: string, page: PageContent, message: string, sha: string | undefined, token: string): Promise<void> {
-  const contentBase64 = Buffer.from(JSON.stringify(page, null, 2), "utf8").toString("base64");
+  const contentBase64 = Buffer.from(JSON.stringify(toStored(page), null, 2), "utf8").toString("base64");
   await putFile(`${CONTENT_DIR}/${slug}.json`, contentBase64, message, sha, token);
 }
 

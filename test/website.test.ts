@@ -56,7 +56,7 @@ describe("farm-website module", () => {
   });
 
   it("website.updateSection merges into an existing page and commits with its SHA", async () => {
-    const existingPage = { title: "About", sections: { intro: { heading: "Hi", body: "old text" } } };
+    const existingPage = { title: "About", sections: [{ key: "intro", heading: "Hi", body: "old text" }] };
     const getUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/src/content/pages/about.json?ref=main`;
     const putUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/src/content/pages/about.json`;
     let putBody: Record<string, unknown> | undefined;
@@ -83,11 +83,11 @@ describe("farm-website module", () => {
     expect(result).toEqual({ updated: true, page: "about", section: "intro", rebuildTriggered: false });
     expect(putBody?.sha).toBe("sha-1");
     const written = JSON.parse(Buffer.from(putBody!.content as string, "base64").toString("utf8"));
-    expect(written).toEqual({ title: "About", sections: { intro: { heading: "Hi", body: "new text" } } });
+    expect(written).toEqual({ title: "About", sections: [{ key: "intro", heading: "Hi", body: "new text" }] });
   });
 
   it("website.updateSection points a section at a photo path without touching other sections", async () => {
-    const existingPage = { title: "Farm", sections: { mob1: { heading: "Mob One", body: "text" } } };
+    const existingPage = { title: "Farm", sections: [{ key: "mob1", heading: "Mob One", body: "text" }] };
     const getUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/src/content/pages/farm.json?ref=main`;
     const putUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/src/content/pages/farm.json`;
     let putBody: Record<string, unknown> | undefined;
@@ -112,7 +112,7 @@ describe("farm-website module", () => {
     );
 
     const written = JSON.parse(Buffer.from(putBody!.content as string, "base64").toString("utf8"));
-    expect(written).toEqual({ title: "Farm", sections: { mob1: { heading: "Mob One", body: "text", photo: "farm/mob-1.jpg" } } });
+    expect(written).toEqual({ title: "Farm", sections: [{ key: "mob1", heading: "Mob One", body: "text", photo: "farm/mob-1.jpg" }] });
   });
 
   it("website.updateSection refuses to guess a page into existence", async () => {
@@ -128,7 +128,7 @@ describe("farm-website module", () => {
     const getUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/src/content/pages/about.json?ref=main`;
     vi.stubGlobal(
       "fetch",
-      fakeFetch({ [`GET ${getUrl}`]: () => json({ sha: "sha-1", content: b64({ title: "About", sections: {} }) }) }),
+      fakeFetch({ [`GET ${getUrl}`]: () => json({ sha: "sha-1", content: b64({ title: "About", sections: [] }) }) }),
     );
 
     await expect(
@@ -219,7 +219,7 @@ describe("farm-website module", () => {
   it("website.listContent summarizes every page's title and section keys", async () => {
     const dirUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/src/content/pages?ref=main`;
     const aboutUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/src/content/pages/about.json?ref=main`;
-    const aboutPage = { title: "About", sections: { intro: { body: "hi" } } };
+    const aboutPage = { title: "About", sections: [{ key: "intro", body: "hi" }] };
 
     vi.stubGlobal(
       "fetch",
