@@ -129,9 +129,11 @@ export function createDashboardServer(orchestrator: Orchestrator): Server {
   // an already-authenticated dashboard session, expires in 10 minutes. See
   // OAuthCredentialStore.completeAuthorization.
   app.get("/api/oauth/callback", async (req, res) => {
-    const { code, state, error } = req.query;
+    const { code, state, error, error_description: errorDescription } = req.query;
     if (error) {
-      res.status(400).send(`OAuth error from Microsoft: ${error}`);
+      // error alone (e.g. "invalid_request") is rarely enough to act on —
+      // error_description carries Microsoft's actual specific reason.
+      res.status(400).send(`OAuth error from Microsoft: ${error}${errorDescription ? ` — ${errorDescription}` : ""}`);
       return;
     }
     if (typeof code !== "string" || typeof state !== "string") {
