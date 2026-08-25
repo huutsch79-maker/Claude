@@ -33,7 +33,9 @@ export const websiteManifest = {
     'actual image separately with "website.replacePhoto" using the same path. Call with intent exactly ' +
     '"website.addPage" and payload {"slug": "<new page slug>", "title": "<page title>", "sections": {"<key>": ' +
     '{"heading": "<...>", "body": "<...>", "photo": "<optional path>"}}} to create a brand new page — fails if ' +
-    'that slug already exists. Call with intent exactly "website.replacePhoto" ' +
+    'that slug already exists. A new page is live at https://waikatohighlands.com/<slug> immediately (a generic ' +
+    "layout renders it automatically), but it is NOT added to the site's navigation menu — mention the direct URL " +
+    'to the user rather than implying it appears in the nav. Call with intent exactly "website.replacePhoto" ' +
     'and payload {"path": "<e.g. \\"about/family.jpg\\">", "attachmentIndex": 0} to add or replace a photo — this ONLY ' +
     "works when the user has attached an image to their current message; attachmentIndex picks which attachment (0 " +
     "for the first) if more than one was sent. Call with intent exactly \"website.listContent\" and payload {} to see " +
