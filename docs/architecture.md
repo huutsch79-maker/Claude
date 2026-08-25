@@ -387,6 +387,27 @@ access to this repo to do it).
    those tiers exist for (no credential or schema is touched), so
    there's no separate approval step to wait for.
 
+**Photo storage: `src/assets/photos/`, not `public/photos/`.** The
+content repo originally stored uploaded photos under `public/`, served
+byte-for-byte as uploaded. That meant a photo taken at phone resolution
+and displayed full-bleed at hero size looked visibly soft/pixelated once
+the browser scaled it up — there was no resizing or re-encoding step
+anywhere in the pipeline. Astro only runs its real image pipeline (resize
+to several widths, re-encode to AVIF, emit a `srcset`) on files under
+`src/`, so the fix was moving the photos directory there and having
+`Hero.astro`/`PhotoBlock.astro` resolve a photo's relative path against
+it via `import.meta.glob(..., { eager: true })` — Vite's way of importing
+every file under a directory into a lookup map at build time, since the
+exact filename isn't known until content is read — then rendering through
+`astro:assets`'s `<Image>` component instead of a plain `<img>`. Nothing
+about the `photo` field's value or `website.replacePhoto`'s payload
+changed, only where `PHOTOS_DIR` in `src/modules/website/index.ts` points
+— see `waikatohighlands-website`'s README.md "Image pipeline" section for
+the full before/after. One consequence: the CMS admin's own media-library
+preview thumbnail can no longer resolve (nothing serves `src/assets/`
+directly at a URL), flagged there as a known, non-blocking limitation —
+the same status as the unfinished OAuth login proxy.
+
 **`website-server/`** (its own Dockerfile and `package.json`, not part
 of the orchestrator's build) is what actually serves the site: on start,
 and on every `/internal/rebuild` call, it pulls the content repo into a

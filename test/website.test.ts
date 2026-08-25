@@ -236,8 +236,8 @@ describe("farm-website module", () => {
 
   it("website.replacePhoto writes the attached image's raw base64 straight to the photos dir", async () => {
     const photoPath = "about/family.jpg";
-    const getUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/public/photos/${photoPath}?ref=main`;
-    const putUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/public/photos/${photoPath}`;
+    const getUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/src/assets/photos/${photoPath}?ref=main`;
+    const putUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/src/assets/photos/${photoPath}`;
     let putBody: Record<string, unknown> | undefined;
 
     vi.stubGlobal(

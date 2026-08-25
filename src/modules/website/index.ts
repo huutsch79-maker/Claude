@@ -14,7 +14,7 @@ const READ_FILE_MAX_CHARS = 8000;
 interface PageSection {
   heading?: string;
   body: string;
-  /** Relative path under public/photos/, e.g. "farm/mob-1.jpg" — set this, then use website.replacePhoto with the same path to upload the actual bytes (two separate steps: pointing a section at a photo vs. the photo existing are independent). */
+  /** Relative path under src/assets/photos/, e.g. "farm/mob-1.jpg" — set this, then use website.replacePhoto with the same path to upload the actual bytes (two separate steps: pointing a section at a photo vs. the photo existing are independent). */
   photo?: string;
 }
 
@@ -51,7 +51,12 @@ function toStored(page: PageContent): StoredPageContent {
 }
 
 const CONTENT_DIR = "src/content/pages";
-const PHOTOS_DIR = "public/photos";
+// src/assets/, not public/ — only images under src/ go through Astro's
+// real build-time image pipeline (resize, re-encode, srcset); public/
+// serves whatever bytes were uploaded, unprocessed, which is what caused
+// the hero photo to look pixelated at larger viewport widths. See
+// waikatohighlands-website's README.md "Image pipeline" section.
+const PHOTOS_DIR = "src/assets/photos";
 
 async function getPage(slug: string, token: string): Promise<{ sha: string; page: PageContent } | null> {
   const file = await getFile(websiteRepoRef(), `${CONTENT_DIR}/${slug}.json`, token);
