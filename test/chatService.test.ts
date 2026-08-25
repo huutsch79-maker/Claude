@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type Anthropic from "@anthropic-ai/sdk";
-import { ChatService, type AnthropicMessagesClient, type SelfHealRunner, type CapabilityFailureRecorder } from "../src/chat/chatService.js";
+import { ChatService, type AnthropicMessagesClient, type SelfHealRunner, type CapabilityFailureRecorder, type DelegatedOAuthResolver } from "../src/chat/chatService.js";
 import { CapabilityRegistry, type CapabilityModule, type CapabilityRow } from "../src/domain/capabilityRegistry.js";
 import { CredentialStore } from "../src/domain/credentialStore.js";
 import { MemoryStore } from "../src/domain/memoryStore.js";
@@ -78,7 +78,16 @@ function fakeFailureRecorder(): CapabilityFailureRecorder & { recordCapabilityFa
   return { recordCapabilityFailure: vi.fn(async () => undefined) };
 }
 
-function buildHarness(anthropicResponses: Anthropic.Message[], selfHeal = fakeSelfHeal(), failureRecorder = fakeFailureRecorder()) {
+function fakeOAuth(): DelegatedOAuthResolver & { getValidToken: ReturnType<typeof vi.fn> } {
+  return { getValidToken: vi.fn(async () => null) }; // no delegated token connected — falls through to CredentialStore
+}
+
+function buildHarness(
+  anthropicResponses: Anthropic.Message[],
+  selfHeal = fakeSelfHeal(),
+  failureRecorder = fakeFailureRecorder(),
+  oauth = fakeOAuth(),
+) {
   const pool = {} as never;
   const registry = new CapabilityRegistry(pool);
   const credentials = new CredentialStore({} as NodeJS.ProcessEnv);
@@ -99,9 +108,9 @@ function buildHarness(anthropicResponses: Anthropic.Message[], selfHeal = fakeSe
   relations.writeBatch = relationsBatchSpy as never;
 
   const anthropic = fakeAnthropic(anthropicResponses);
-  const chat = new ChatService(anthropic, registry, credentials, memory, relations, selfHeal, failureRecorder, "claude-opus-5");
+  const chat = new ChatService(anthropic, registry, credentials, memory, relations, selfHeal, failureRecorder, oauth, "claude-opus-5");
 
-  return { chat, anthropic, registry, memory, selfHeal, failureRecorder, memoryWriteSpy, relationsBatchSpy, listSpy };
+  return { chat, anthropic, registry, memory, selfHeal, failureRecorder, oauth, memoryWriteSpy, relationsBatchSpy, listSpy };
 }
 
 describe("ChatService", () => {
@@ -111,6 +120,27 @@ describe("ChatService", () => {
     expect(result.reply).toBe("Hello there!");
     expect(result.toolCalls).toEqual([]);
     expect(result.widgets).toEqual([]);
+  });
+
+  it("prefers an OAuth-connected credential over the static env fallback", async () => {
+    const oauth = fakeOAuth();
+    oauth.getValidToken.mockResolvedValue({ ref: "test-cred", value: "oauth-token", expiresAt: null });
+    const { chat, registry } = buildHarness(
+      [toolUseMessage("tu_1", "test-capability", { intent: "x", payload: {} }), textMessage("done")],
+      undefined,
+      undefined,
+      oauth,
+    );
+    const handleSpy = vi.fn(async () => ({ ok: true }));
+    registry.loadModule = vi.fn(async () => ({ canHandle: () => true, handle: handleSpy })) as never;
+    registry.list = vi.fn(async () => [capabilityRow({ credentialRef: "test-cred" })]) as never;
+
+    await chat.converse("session-1", "do it");
+    expect(oauth.getValidToken).toHaveBeenCalledWith("test-cred");
+    expect(handleSpy).toHaveBeenCalledWith(
+      { intent: "x", payload: {} },
+      { credential: { ref: "test-cred", value: "oauth-token", expiresAt: null } },
+    );
   });
 
   it("degrades gracefully when memory/embedding isn't configured (no crash, no recall)", async () => {

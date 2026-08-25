@@ -22,6 +22,15 @@ organized — NZB's M365 tenant and a personal Hotmail account are never
 the same secret, and using one capability never touches another's
 credential.
 
+**Delegated OAuth stays human-gated, always.** `hotmail-outlook` and
+`nzb-m365-connector` need real mailbox access, which only the mailbox
+owner can grant — JARVIS can request it via a dashboard "Connect" button
+and can automate everything downstream of that (token exchange, storage,
+refresh, no redeploy needed), but the actual Microsoft consent screen is
+never something JARVIS clicks through itself. See
+`src/domain/oauthCredentialStore.ts` and docs/architecture.md's
+"Delegated OAuth" section.
+
 Capabilities carry an optional freeform `category` label ("work",
 "personal", or anything else) purely for UI grouping — it is never an
 access-control boundary. Adding a future capability, employer, or life

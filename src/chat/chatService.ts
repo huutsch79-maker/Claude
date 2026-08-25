@@ -1,9 +1,20 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import type { CapabilityRegistry, CapabilityRow } from "../domain/capabilityRegistry.js";
-import type { CredentialStore } from "../domain/credentialStore.js";
+import type { CredentialStore, CredentialRecord } from "../domain/credentialStore.js";
 import type { MemoryStore } from "../domain/memoryStore.js";
 import type { RelationsStore } from "../domain/relationsStore.js";
 import { listScripts } from "../core/scriptRegistry.js";
+
+/**
+ * Narrowed to exactly what this file calls on OAuthCredentialStore —
+ * dynamic, refreshable delegated tokens (Hotmail, NZB mail scopes) live
+ * here instead of CredentialStore's static env values. Tried first; a
+ * capability whose ref was never connected via OAuth falls through to
+ * CredentialStore unchanged, so this is additive, not a replacement.
+ */
+export interface DelegatedOAuthResolver {
+  getValidToken(ref: string): Promise<CredentialRecord | null>;
+}
 
 /** Narrowed to exactly what this file calls, so tests can inject a fake without mocking the whole SDK. */
 export interface AnthropicMessagesClient {
@@ -89,6 +100,7 @@ export class ChatService {
     private readonly relations: RelationsStore,
     private readonly selfHeal: SelfHealRunner,
     private readonly failureRecorder: CapabilityFailureRecorder,
+    private readonly oauth: DelegatedOAuthResolver,
     private readonly model: string,
     private readonly maxTokens: number = DEFAULT_MAX_TOKENS,
   ) {}
@@ -158,6 +170,12 @@ export class ChatService {
     return { reply: finalText, toolCalls, widgets };
   }
 
+  /** OAuth-connected (Hotmail, NZB mail) first, static JARVIS_CRED_* fallback — see DelegatedOAuthResolver above. */
+  private async resolveCredential(ref: string): Promise<CredentialRecord | null> {
+    const delegated = await this.oauth.getValidToken(ref);
+    return delegated ?? this.credentials.get(ref);
+  }
+
   private async runCapability(
     row: CapabilityRow | undefined,
     name: string,
@@ -167,7 +185,7 @@ export class ChatService {
       return { ok: false, content: `unknown capability "${name}"`, summary: `unknown capability "${name}"` };
     }
     try {
-      const credential = row.credentialRef ? this.credentials.get(row.credentialRef) : null;
+      const credential = row.credentialRef ? await this.resolveCredential(row.credentialRef) : null;
       const module = await this.registry.loadModule(row);
       const result = await module.handle(input, { credential });
       return { ok: true, content: JSON.stringify(result), summary: `handled by ${row.name}` };

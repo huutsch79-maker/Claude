@@ -56,8 +56,47 @@ is for a different, non-LLM-driven dispatch path if one is ever added.
 
 **First modules.** `hotmail-outlook` (category `personal`, Microsoft
 Graph) and `nzb-m365-connector` (category `work`, Microsoft Graph +
-Dynamics BC). Both OAuth flows are stubbed — wiring live app
-registrations is an operational step, not something to fake in code.
+Dynamics BC). Both need real delegated OAuth — see "Delegated OAuth"
+below for how that's actually wired now.
+
+## Delegated OAuth
+
+`hotmail-outlook` and `nzb-m365-connector` need genuine delegated
+consent — reading a real person's mailbox is not something an app-only
+client-credentials grant can do (unlike the two read-only tenant-insight
+capabilities below, which use exactly that). This can't be automated
+away: only the mailbox's actual owner can click through Microsoft's
+consent screen. What *can* be automated is everything else — token
+exchange, storage, and refresh — via `src/domain/oauthCredentialStore.ts`:
+
+1. Dashboard shows a **Connect** button next to any capability whose
+   credential_ref has a `JARVIS_OAUTH_APP_<REF>` app config set
+   (`GET /api/capabilities` exposes `oauthConfigured`).
+2. Clicking it calls `GET /api/oauth/:ref/authorize-url` (behind the
+   normal bearer-token auth, since it's a same-origin fetch) to get a
+   real `login.microsoftonline.com` URL with a server-issued, single-use
+   `state` token, then navigates the browser there directly.
+3. The human completes Microsoft's actual consent screen.
+4. Microsoft redirects the browser back to `GET /api/oauth/callback` — a
+   route that can't sit behind bearer auth (a top-level browser
+   navigation carries no Authorization header). Its security comes from
+   `state` instead: unguessable, tied to one specific credential_ref,
+   expires in 10 minutes, consumed exactly once
+   (`OAuthCredentialStore.completeAuthorization`).
+5. The authorization code is exchanged for an access + refresh token pair
+   and persisted in `jarvis.oauth_credentials` — no redeploy, no `.env`
+   edit, usable immediately.
+
+At use time, `ChatService.resolveCredential()` tries
+`OAuthCredentialStore.getValidToken()` first (refreshing automatically if
+the stored token is near expiry) and only falls through to the static
+`CredentialStore` (env-var) lookup if there's no connected row — so this
+is purely additive: the two app-only tenant-insight capabilities never
+touch this path at all, and a capability that's never been through
+Connect behaves exactly as it did before this feature existed. If a
+refresh fails (e.g. the human revoked consent in Microsoft), the
+capability just reports "no credential configured" again, same as if it
+had never been connected — no special-cased failure state.
 
 ## Tenant insights: read-only by design
 

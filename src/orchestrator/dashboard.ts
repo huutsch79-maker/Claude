@@ -93,6 +93,7 @@ export function createDashboardServer(orchestrator: Orchestrator): Server {
         priority: r.priority,
         credentialRef: r.credentialRef,
         modelOverride: r.modelOverride,
+        oauthConfigured: r.credentialRef ? jarvis.oauthCredentials.isConfigured(r.credentialRef) : false,
       })),
     );
   });
@@ -101,6 +102,43 @@ export function createDashboardServer(orchestrator: Orchestrator): Server {
     const enabled = Boolean(req.body?.enabled);
     await jarvis.registry.setEnabled(req.params.name!, enabled);
     res.json({ ok: true });
+  });
+
+  // Fetched via authenticated JS (not a raw browser nav) so it stays behind
+  // the same bearer-token check as every other /api route — the browser
+  // then does window.location = url itself to actually leave for Microsoft.
+  app.get("/api/oauth/:ref/authorize-url", (req, res) => {
+    const ref = req.params.ref!;
+    if (!jarvis.oauthCredentials.isConfigured(ref)) {
+      res.status(400).json({ error: `no OAuth app configured for "${ref}"` });
+      return;
+    }
+    const url = jarvis.oauthCredentials.buildAuthorizeUrl(ref);
+    res.json({ url });
+  });
+
+  // Hit directly by Microsoft's redirect after the user completes consent —
+  // a plain browser GET with no Authorization header, so this route can't
+  // sit behind the bearer-token middleware above. Its security comes from
+  // the `state` parameter instead: unguessable, single-use, issued only to
+  // an already-authenticated dashboard session, expires in 10 minutes. See
+  // OAuthCredentialStore.completeAuthorization.
+  app.get("/api/oauth/callback", async (req, res) => {
+    const { code, state, error } = req.query;
+    if (error) {
+      res.status(400).send(`OAuth error from Microsoft: ${error}`);
+      return;
+    }
+    if (typeof code !== "string" || typeof state !== "string") {
+      res.status(400).send("missing code or state");
+      return;
+    }
+    try {
+      const { ref } = await jarvis.oauthCredentials.completeAuthorization(state, code);
+      res.redirect(`/?oauth_connected=${encodeURIComponent(ref)}`);
+    } catch (err) {
+      res.status(400).send(err instanceof Error ? err.message : String(err));
+    }
   });
 
   app.post("/api/chat", async (req, res) => {

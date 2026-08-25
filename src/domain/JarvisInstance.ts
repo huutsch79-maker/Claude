@@ -11,6 +11,7 @@ import { SecurityAccess } from "../core/security.js";
 import { ApprovalGate, PushoverApprovalNotifier } from "../core/approvalGate.js";
 import { CoreOpsStore } from "../core/coreOpsStore.js";
 import { createGithubIssueReporter } from "../core/githubIssueReporter.js";
+import { OAuthCredentialStore } from "./oauthCredentialStore.js";
 import { ChatService, type AnthropicMessagesClient } from "../chat/chatService.js";
 import type { OperationalMetadata } from "../orchestrator/operationalMetadata.js";
 
@@ -34,6 +35,8 @@ export class JarvisInstance {
   readonly selfHeal: SelfHeal;
   readonly security: SecurityAccess;
   readonly ops: CoreOpsStore;
+  /** Real interactive OAuth (Hotmail, NZB mail) — see oauthCredentialStore.ts. Exists independent of chat since the dashboard's Connect/callback routes need it whether or not ANTHROPIC_API_KEY is set. */
+  readonly oauthCredentials: OAuthCredentialStore;
   /** Null when no Anthropic client was configured (e.g. ANTHROPIC_API_KEY unset) — chat is opt-in, not required to run the rest of JARVIS. */
   readonly chat: ChatService | null;
 
@@ -61,6 +64,7 @@ export class JarvisInstance {
       process.env.JARVIS_GITHUB_REPO ?? null,
     );
     this.reviewer = new Reviewer(this.pool, this.registry, this.memory, this.security, this.ops, githubReporter);
+    this.oauthCredentials = new OAuthCredentialStore(this.pool, process.env.JARVIS_DASHBOARD_PUBLIC_URL ?? "");
 
     const notifier = new PushoverApprovalNotifier();
     const approvalGate = new ApprovalGate(notifier);
@@ -86,6 +90,7 @@ export class JarvisInstance {
           this.relations,
           this.selfHeal,
           this.ops,
+          this.oauthCredentials,
           // `||`, not `??`: .env.example ships JARVIS_CHAT_MODEL as an empty
           // line, and dotenv turns that into "" (defined, not nullish), so
           // `??` would silently send Claude an empty model string instead

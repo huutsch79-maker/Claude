@@ -124,6 +124,23 @@ create table if not exists jarvis.capability_failures (
 create index if not exists idx_jarvis_capability_failures_lookup
   on jarvis.capability_failures (capability, occurred_at desc);
 
+-- Dynamic, refreshable OAuth tokens for capabilities that need real
+-- delegated (interactive-consent) access — Hotmail and the NZB connector's
+-- mail scopes — as opposed to the static JARVIS_CRED_* env values used by
+-- everything else. Populated by the dashboard's OAuth callback
+-- (src/orchestrator/dashboard.ts), read/refreshed by
+-- src/domain/oauthCredentialStore.ts. A capability whose credential_ref
+-- has no row here just falls through to the static CredentialStore, so
+-- this only ever affects the capabilities that opt into it.
+create table if not exists jarvis.oauth_credentials (
+  credential_ref  text primary key,
+  access_token    text not null,
+  refresh_token   text not null,
+  expires_at      timestamptz not null,
+  scope           text not null,
+  updated_at      timestamptz not null default now()
+);
+
 -- =========================================================================
 -- Role: one login role for the whole system, owning its own schema/tables
 -- so the apply-migration script can run real DDL without the running
@@ -147,6 +164,7 @@ alter table jarvis.reviewer_proposals owner to jarvis_app;
 alter table jarvis.script_runs owner to jarvis_app;
 alter table jarvis.applied_migrations owner to jarvis_app;
 alter table jarvis.capability_failures owner to jarvis_app;
+alter table jarvis.oauth_credentials owner to jarvis_app;
 
 -- =========================================================================
 -- Migrating from the earlier two-domain build: if `work`/`personal` schemas

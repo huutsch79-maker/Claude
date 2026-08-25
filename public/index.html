@@ -440,11 +440,25 @@ async function renderSidebar() {
         el("div", { class: "item-title" }, [document.createTextNode(c.name), el("span", { class: "cat-chip", text: category })]),
         el("div", { class: "item-sub", text: c.credentialRef ? "cred: " + c.credentialRef : "" }),
       ]));
-      row.appendChild(el("button", {
+      const right = el("div", { class: "btn-row" });
+      if (c.oauthConfigured) {
+        right.appendChild(el("button", {
+          class: "tiny",
+          text: "Connect",
+          onclick: async () => {
+            try {
+              const { url } = await api(`/api/oauth/${encodeURIComponent(c.credentialRef)}/authorize-url`);
+              window.location.href = url; // leaves the page for Microsoft's consent screen
+            } catch (e) { alert("Failed: " + e.message); }
+          },
+        }));
+      }
+      right.appendChild(el("button", {
         class: "tiny",
         text: c.enabled ? "Disable" : "Enable",
         onclick: async () => { await api(`/api/capabilities/${c.name}/enabled`, { method: "POST", body: JSON.stringify({ enabled: !c.enabled }) }); renderSidebar(); },
       }));
+      row.appendChild(right);
       capSection.appendChild(row);
     }
   }
@@ -452,12 +466,21 @@ async function renderSidebar() {
 }
 
 // ---------- connect flow ----------
+function checkOauthRedirect() {
+  const params = new URLSearchParams(window.location.search);
+  const connected = params.get("oauth_connected");
+  if (!connected) return;
+  history.replaceState(null, "", window.location.pathname); // drop the query param so a refresh doesn't re-show this
+  alert(`Connected "${connected}" — it can be used right away, no redeploy needed.`);
+}
+
 async function tryConnect() {
   try {
     await api("/api/health");
     document.getElementById("connectScreen").style.display = "none";
     document.getElementById("app").style.display = "flex";
     renderChatLog();
+    checkOauthRedirect();
     await renderSidebar();
     setInterval(renderSidebar, 30000);
     return true;
