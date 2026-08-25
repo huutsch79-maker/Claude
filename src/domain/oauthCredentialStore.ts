@@ -132,16 +132,29 @@ export class OAuthCredentialStore {
   /**
    * Returns a currently-valid access token for `ref`, refreshing it first
    * if it's near expiry. Returns null if this ref was never connected (no
-   * row) or the refresh itself failed (e.g. the user revoked consent in
-   * Microsoft) — either way, the caller falls through to treating this as
-   * "no credential configured," same as before this feature existed.
+   * row), the refresh itself failed (e.g. the user revoked consent in
+   * Microsoft), or the query itself failed (e.g. jarvis.oauth_credentials
+   * doesn't exist yet because migration 0002 hasn't been applied) — every
+   * case falls through to "no credential configured" the same way. This
+   * is called for every credentialed capability's resolveCredential(), not
+   * just the ones actually connected via OAuth (see ChatService), so it
+   * must never let a DB-level problem here break a capability — like
+   * hotmail-outlook's IMAP credential, or either tenant-insight
+   * capability's app-only one — that was never going to use this store at
+   * all.
    */
   async getValidToken(ref: string): Promise<CredentialRecord | null> {
-    const result = await this.pool.query(
-      `select access_token, refresh_token, expires_at from jarvis.oauth_credentials where credential_ref = $1`,
-      [ref],
-    );
-    const row = result.rows[0] as { access_token: string; refresh_token: string; expires_at: string } | undefined;
+    let row: { access_token: string; refresh_token: string; expires_at: string } | undefined;
+    try {
+      const result = await this.pool.query(
+        `select access_token, refresh_token, expires_at from jarvis.oauth_credentials where credential_ref = $1`,
+        [ref],
+      );
+      row = result.rows[0];
+    } catch (err) {
+      console.warn(`[oauth] lookup for "${ref}" failed (treating as not connected):`, err instanceof Error ? err.message : err);
+      return null;
+    }
     if (!row) return null;
 
     const expiresAtMs = new Date(row.expires_at).getTime();
