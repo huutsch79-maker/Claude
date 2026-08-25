@@ -54,41 +54,36 @@ surfaced as `{ kind: "ask_user" }`. In the chat path this mostly doesn't
 come up: Claude disambiguates by naming one specific tool, so `resolve()`
 is for a different, non-LLM-driven dispatch path if one is ever added.
 
-**First modules.** `hotmail-outlook` (category `personal`, IMAP/SMTP with
-an app password) and `nzb-m365-connector` (category `work`, Microsoft
-Graph + Dynamics BC, real Entra OAuth). Both need genuine access to a
-real mailbox; which mechanism gets there differs on purpose — see below.
+**First modules.** `hotmail-outlook` (category `personal`, Microsoft
+Graph) and `nzb-m365-connector` (category `work`, Microsoft Graph +
+Dynamics BC) — both real delegated OAuth. See "Delegated OAuth" below.
 
-## Hotmail: IMAP/SMTP, not OAuth
-
-`hotmail-outlook` (`src/modules/hotmail/`) authenticates via an account
-**app password** over IMAP (search) and SMTP (send), not Microsoft Graph
-OAuth. This was a deliberate pivot away from the OAuth path everything
-else here uses, for a reason specific to this one capability: an Entra
-app registration always has to live inside *some* Entra tenant, and this
-is a personal mailbox with zero connection to NZB's. Routing even just
-the app-registration metadata (client ID, redirect URI, requested scopes
-— never the actual mail content or tokens) through NZB's tenant was a
-real option (the home tenant of an app registration doesn't restrict
-which accounts can sign into it — Microsoft explicitly supports personal
-accounts consenting to an app registered under an org tenant), but an app
-password sidesteps the whole question, at the cost of needing IMAP/SMTP
-code instead of Graph REST calls. `nzb-m365-connector` doesn't have this
-option — IMAP app passwords are typically disabled by policy on
-organizational (Microsoft 365 business) tenants — so it stays on the
-OAuth path below. Generating the app password requires two-step
-verification already enabled on the personal account
-(https://account.live.com/proofs/AppPassword).
+**Tried and abandoned: IMAP/SMTP with an app password for Hotmail.** To
+avoid needing any Entra app registration for a personal mailbox at all,
+`hotmail-outlook` briefly authenticated via an account app password over
+IMAP (search) and SMTP (send) instead of Graph OAuth. It doesn't work:
+Microsoft rejects the login outright ("Login is disabled") — Basic
+Authentication is being phased out across consumer accounts too, not
+just organizational tenants as originally assumed, and the account's own
+"let apps use IMAP" setting being on doesn't matter once the server
+itself refuses password-based login. Reverted back to Graph OAuth, same
+mechanism `nzb-m365-connector` already used. The home tenant an app
+registration lives in doesn't restrict which accounts can sign into it —
+Microsoft explicitly supports a personal account consenting to an app
+registered under an org tenant — so hosting `hotmail-outlook`'s app
+registration in NZB's tenant (just the metadata: client ID, redirect
+URI, requested scopes — never the actual mail content or tokens) turned
+out to be the pragmatic answer, not something worth avoiding at real cost.
 
 ## Delegated OAuth
 
-`nzb-m365-connector` needs genuine delegated consent — reading a real
-NZB mailbox is not something an app-only client-credentials grant can do
-(unlike the two read-only tenant-insight capabilities below, which use
-exactly that). This can't be automated away: only the mailbox's actual
-owner can click through Microsoft's consent screen. What *can* be
-automated is everything else — token exchange, storage, and refresh —
-via `src/domain/oauthCredentialStore.ts`:
+`hotmail-outlook` and `nzb-m365-connector` both need genuine delegated
+consent — reading a real mailbox is not something an app-only
+client-credentials grant can do (unlike the two read-only tenant-insight
+capabilities below, which use exactly that). This can't be automated
+away: only the mailbox's actual owner can click through Microsoft's
+consent screen. What *can* be automated is everything else — token
+exchange, storage, and refresh — via `src/domain/oauthCredentialStore.ts`:
 
 1. Dashboard shows a **Connect** button next to any capability whose
    credential_ref has a `JARVIS_OAUTH_APP_<REF>` app config set
@@ -112,10 +107,11 @@ At use time, `ChatService.resolveCredential()` tries
 `OAuthCredentialStore.getValidToken()` first (refreshing automatically if
 the stored token is near expiry) and only falls through to the static
 `CredentialStore` (env-var) lookup if there's no connected row — so this
-is purely additive: every other capability (the two app-only tenant-insight
-ones, and `hotmail-outlook`'s app-password credential) never has a row
-here at all, so `getValidToken()` returns null immediately and they
-behave exactly as if this feature didn't exist. If a
+is purely additive: the two app-only tenant-insight capabilities never
+have a row here at all, so `getValidToken()` returns null immediately and
+they behave exactly as if this feature didn't exist (that lookup is also
+fail-soft — a DB error, e.g. the migration not yet applied, is treated
+the same as "not connected" rather than breaking the capability). If a
 refresh fails (e.g. the human revoked consent in Microsoft), the
 capability just reports "no credential configured" again, same as if it
 had never been connected — no special-cased failure state.

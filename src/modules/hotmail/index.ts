@@ -1,44 +1,23 @@
-import { ImapFlow } from "imapflow";
-import nodemailer from "nodemailer";
 import type { CapabilityContext, CapabilityModule } from "../../domain/capabilityRegistry.js";
+import { describeFailedResponse } from "../../domain/httpError.js";
 
 export interface EmailRequest {
   intent: "email.search" | "email.send";
   payload: Record<string, unknown>;
 }
 
-interface HotmailImapCredential {
-  email: string;
-  appPassword: string;
-}
-
-const IMAP_HOST = "outlook.office365.com";
-const IMAP_PORT = 993;
-const SMTP_HOST = "smtp-mail.outlook.com";
-const SMTP_PORT = 587;
-const MAX_RESULTS = 20;
-
-function parseCredential(raw: string): HotmailImapCredential {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    throw new Error('hotmail-outlook: expected credential JSON {"email":"...","appPassword":"..."}');
-  }
-  const c = parsed as Partial<HotmailImapCredential>;
-  if (!c.email || !c.appPassword) {
-    throw new Error("hotmail-outlook: credential JSON must include email and appPassword");
-  }
-  return { email: c.email, appPassword: c.appPassword };
-}
-
 /**
- * Personal Hotmail/Outlook.com via IMAP (search) and SMTP (send), both
- * authenticated with an account app password — not Graph OAuth. See
- * manifest.ts for why: this is a personal mailbox with no connection to
- * any employer's Entra tenant, and an app password sidesteps needing an
- * Entra app registration (and the tenant-hosting question that comes with
- * one) entirely for this specific capability.
+ * Hotmail/Outlook via Microsoft Graph, real delegated OAuth (see
+ * src/domain/oauthCredentialStore.ts) — connect from the dashboard's
+ * Capabilities section once JARVIS_OAUTH_APP_HOTMAIL_OAUTH is configured.
+ *
+ * An IMAP/SMTP + app-password version of this module was tried first, to
+ * avoid needing an Entra app registration for a personal mailbox at all.
+ * It turned out not to work: Microsoft rejects the app-password IMAP
+ * login outright ("Login is disabled") — Basic Authentication is being
+ * phased out across both organizational and consumer accounts, not just
+ * business tenants as originally assumed. So this is back to Graph OAuth,
+ * same mechanism nzb-m365-connector already uses.
  */
 const hotmailModule: CapabilityModule = {
   canHandle(request: unknown): boolean {
@@ -50,69 +29,30 @@ const hotmailModule: CapabilityModule = {
     const req = request as EmailRequest;
     if (!ctx.credential) {
       throw new Error(
-        "hotmail-outlook: no credential configured. Set JARVIS_CRED_HOTMAIL_IMAP to " +
-          '{"email":"...","appPassword":"..."} — generate the app password at ' +
-          "https://account.live.com/proofs/AppPassword (requires two-step verification enabled on the account) " +
-          "before using this capability.",
+        "hotmail-outlook: no credential configured. Connect this capability from the dashboard's Capabilities " +
+          "section (requires JARVIS_OAUTH_APP_HOTMAIL_OAUTH to be set) before using it.",
       );
     }
-    const { email, appPassword } = parseCredential(ctx.credential.value);
 
+    const graphBase = "https://graph.microsoft.com/v1.0";
     if (req.intent === "email.search") {
       const query = typeof req.payload.query === "string" ? req.payload.query : "";
-      return searchMessages(email, appPassword, query);
+      const response = await fetch(`${graphBase}/me/messages?$search="${encodeURIComponent(query)}"`, {
+        headers: { authorization: `Bearer ${ctx.credential.value}` },
+      });
+      if (!response.ok) throw new Error(`hotmail-outlook: Graph search failed (${await describeFailedResponse(response)})`);
+      return response.json();
     }
 
-    return sendMessage(email, appPassword, req.payload);
+    // email.send
+    const response = await fetch(`${graphBase}/me/sendMail`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${ctx.credential.value}`, "content-type": "application/json" },
+      body: JSON.stringify({ message: req.payload }),
+    });
+    if (!response.ok) throw new Error(`hotmail-outlook: Graph sendMail failed (${await describeFailedResponse(response)})`);
+    return { sent: true };
   },
 };
-
-async function searchMessages(email: string, appPassword: string, query: string): Promise<unknown> {
-  const client = new ImapFlow({
-    host: IMAP_HOST,
-    port: IMAP_PORT,
-    secure: true,
-    auth: { user: email, pass: appPassword },
-    logger: false,
-  });
-  await client.connect();
-  try {
-    const lock = await client.getMailboxLock("INBOX");
-    try {
-      const uids = await client.search(query ? { text: query } : { all: true }, { uid: true });
-      const recent = (uids || []).slice(-MAX_RESULTS).reverse();
-      const messages: Array<{ subject: string; from: string; date: string | null }> = [];
-      for await (const msg of client.fetch(recent, { envelope: true })) {
-        messages.push({
-          subject: msg.envelope?.subject ?? "(no subject)",
-          from: msg.envelope?.from?.[0]?.address ?? "(unknown)",
-          date: msg.envelope?.date ? msg.envelope.date.toISOString() : null,
-        });
-      }
-      return { messages };
-    } finally {
-      lock.release();
-    }
-  } finally {
-    await client.logout();
-  }
-}
-
-async function sendMessage(email: string, appPassword: string, payload: Record<string, unknown>): Promise<unknown> {
-  const to = typeof payload.to === "string" ? payload.to : "";
-  const subject = typeof payload.subject === "string" ? payload.subject : "";
-  const body = typeof payload.body === "string" ? payload.body : "";
-  if (!to) throw new Error("hotmail-outlook: email.send requires payload.to");
-
-  const transport = nodemailer.createTransport({
-    host: SMTP_HOST,
-    port: SMTP_PORT,
-    secure: false,
-    requireTLS: true,
-    auth: { user: email, pass: appPassword },
-  });
-  await transport.sendMail({ from: email, to, subject, text: body });
-  return { sent: true };
-}
 
 export default hotmailModule;
