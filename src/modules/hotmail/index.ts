@@ -35,6 +35,7 @@ const hotmailModule: CapabilityModule = {
     }
 
     const graphBase = "https://graph.microsoft.com/v1.0";
+
     if (req.intent === "email.search") {
       const query = typeof req.payload.query === "string" ? req.payload.query : "";
       const response = await fetch(`${graphBase}/me/messages?$search="${encodeURIComponent(query)}"`, {
@@ -44,14 +45,20 @@ const hotmailModule: CapabilityModule = {
       return response.json();
     }
 
-    // email.send
-    const response = await fetch(`${graphBase}/me/sendMail`, {
-      method: "POST",
-      headers: { authorization: `Bearer ${ctx.credential.value}`, "content-type": "application/json" },
-      body: JSON.stringify({ message: req.payload }),
-    });
-    if (!response.ok) throw new Error(`hotmail-outlook: Graph sendMail failed (${await describeFailedResponse(response)})`);
-    return { sent: true };
+    if (req.intent === "email.send") {
+      const response = await fetch(`${graphBase}/me/sendMail`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${ctx.credential.value}`, "content-type": "application/json" },
+        body: JSON.stringify({ message: req.payload }),
+      });
+      if (!response.ok) throw new Error(`hotmail-outlook: Graph sendMail failed (${await describeFailedResponse(response)})`);
+      return { sent: true };
+    }
+
+    // Fail closed: an unrecognized intent must never silently fall through
+    // to sendMail — the most consequential of the two actions is exactly
+    // the wrong default for "we don't know what this request means."
+    throw new Error(`hotmail-outlook: unsupported intent "${req.intent}" — must be "email.search" or "email.send"`);
   },
 };
 

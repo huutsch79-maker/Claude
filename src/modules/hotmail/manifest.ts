@@ -12,9 +12,17 @@ export const hotmailManifest = {
   enabled: true,
   priority: 100,
   schema_def: {
-    request: { intent: "string (e.g. 'email.search', 'email.send')", payload: "object" },
+    request: {
+      intent: "'email.search' | 'email.send'",
+      payload: "email.search: { query?: string }. email.send: { toRecipients: [...], subject: string, body: {...} } — Graph sendMail message shape",
+    },
   },
-  system_prompt: "You can read and send email on the user's personal Hotmail/Outlook account via Microsoft Graph.",
+  system_prompt:
+    "You can read and send email on the user's personal Hotmail/Outlook account via Microsoft Graph. Call with " +
+    'intent exactly "email.search" and payload {"query": "<optional search text>"} to search/list messages, or ' +
+    'intent exactly "email.send" and payload shaped as a Graph message object (e.g. {"toRecipients": ' +
+    '[{"emailAddress": {"address": "..."}}], "subject": "...", "body": {"contentType": "Text", "content": "..."}}) ' +
+    "to send one. Any other intent value is rejected, not treated as a send — never guess a close-enough intent name.",
   tool_config: { provider: "microsoft-graph", scopes: ["Mail.Read", "Mail.Send"] },
   model_override: null,
   credential_ref: "hotmail-oauth",

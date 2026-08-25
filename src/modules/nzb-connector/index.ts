@@ -36,14 +36,17 @@ const nzbConnectorModule: CapabilityModule = {
       return response.json();
     }
 
-    // dynamics.record.lookup
-    const dynamicsBase = process.env.JARVIS_NZB_DYNAMICS_BASE_URL ?? "https://api.businesscentral.dynamics.com/v2.0";
-    const recordId = String(req.payload.id ?? "");
-    const response = await fetch(`${dynamicsBase}/records/${encodeURIComponent(recordId)}`, {
-      headers: { authorization: `Bearer ${ctx.credential.value}` },
-    });
-    if (!response.ok) throw new Error(`nzb-m365-connector: Dynamics lookup failed (${await describeFailedResponse(response)})`);
-    return response.json();
+    if (req.intent === "dynamics.record.lookup") {
+      const dynamicsBase = process.env.JARVIS_NZB_DYNAMICS_BASE_URL ?? "https://api.businesscentral.dynamics.com/v2.0";
+      const recordId = String(req.payload.id ?? "");
+      const response = await fetch(`${dynamicsBase}/records/${encodeURIComponent(recordId)}`, {
+        headers: { authorization: `Bearer ${ctx.credential.value}` },
+      });
+      if (!response.ok) throw new Error(`nzb-m365-connector: Dynamics lookup failed (${await describeFailedResponse(response)})`);
+      return response.json();
+    }
+
+    throw new Error(`nzb-m365-connector: unsupported intent "${req.intent}" — must be "m365.mail.search" or "dynamics.record.lookup"`);
   },
 };
 
