@@ -27,6 +27,17 @@ export interface SelfHealRunner {
   ): Promise<{ status: "applied" } | { status: "pending_approval"; approvalId: string }>;
 }
 
+/**
+ * Narrowed to exactly what this file calls — records a failed capability
+ * dispatch so the Reviewer can notice a capability failing repeatedly
+ * (see reviewer.ts's reviewCapabilityFailures) rather than only ever
+ * seeing one failure at a time in a chat transcript. Best-effort: never
+ * allowed to fail the chat turn itself.
+ */
+export interface CapabilityFailureRecorder {
+  recordCapabilityFailure(capability: string, summary: string): Promise<void>;
+}
+
 export interface ChatToolCall {
   capability: string;
   ok: boolean;
@@ -77,6 +88,7 @@ export class ChatService {
     private readonly memory: MemoryStore,
     private readonly relations: RelationsStore,
     private readonly selfHeal: SelfHealRunner,
+    private readonly failureRecorder: CapabilityFailureRecorder,
     private readonly model: string,
     private readonly maxTokens: number = DEFAULT_MAX_TOKENS,
   ) {}
@@ -133,6 +145,9 @@ export class ChatService {
         const outcome = await this.runCapability(capabilitiesByName.get(block.name), block.name, block.input);
         toolResults.push({ type: "tool_result", tool_use_id: block.id, content: outcome.content, is_error: !outcome.ok });
         toolCalls.push({ capability: block.name, ok: outcome.ok, summary: outcome.summary });
+        if (!outcome.ok) {
+          this.failureRecorder.recordCapabilityFailure(block.name, outcome.summary).catch(() => {});
+        }
       }
       history.push({ role: "user", content: toolResults });
     }

@@ -10,6 +10,7 @@ import { SelfHeal, type SelfHealHandlers } from "../core/selfHeal.js";
 import { SecurityAccess } from "../core/security.js";
 import { ApprovalGate, PushoverApprovalNotifier } from "../core/approvalGate.js";
 import { CoreOpsStore } from "../core/coreOpsStore.js";
+import { createGithubIssueReporter } from "../core/githubIssueReporter.js";
 import { ChatService, type AnthropicMessagesClient } from "../chat/chatService.js";
 import type { OperationalMetadata } from "../orchestrator/operationalMetadata.js";
 
@@ -54,8 +55,12 @@ export class JarvisInstance {
     this.relations = new RelationsStore(this.pool);
     this.registry = new CapabilityRegistry(this.pool);
     this.security = new SecurityAccess(this.credentials, this.registry);
-    this.reviewer = new Reviewer(this.pool, this.registry, this.memory, this.security);
     this.ops = new CoreOpsStore(this.pool);
+    const githubReporter = createGithubIssueReporter(
+      this.credentials.get("github-issues")?.value ?? null,
+      process.env.JARVIS_GITHUB_REPO ?? null,
+    );
+    this.reviewer = new Reviewer(this.pool, this.registry, this.memory, this.security, this.ops, githubReporter);
 
     const notifier = new PushoverApprovalNotifier();
     const approvalGate = new ApprovalGate(notifier);
@@ -80,6 +85,7 @@ export class JarvisInstance {
           this.memory,
           this.relations,
           this.selfHeal,
+          this.ops,
           // `||`, not `??`: .env.example ships JARVIS_CHAT_MODEL as an empty
           // line, and dotenv turns that into "" (defined, not nullish), so
           // `??` would silently send Claude an empty model string instead

@@ -20,9 +20,34 @@ export interface ScriptRunRow {
   finishedAt: string | null;
 }
 
-/** Read/write access to jarvis.reviewer_proposals and jarvis.script_runs. */
+export interface FailingCapability {
+  capability: string;
+  count: number;
+  latestSummary: string;
+}
+
+/** Read/write access to jarvis.reviewer_proposals, jarvis.script_runs, and jarvis.capability_failures. */
 export class CoreOpsStore {
   constructor(private readonly pool: pg.Pool) {}
+
+  /** Called by ChatService after a failed capability dispatch — never blocks or throws on the caller's behalf. */
+  async recordCapabilityFailure(capability: string, summary: string): Promise<void> {
+    await this.pool.query(`insert into jarvis.capability_failures (capability, summary) values ($1, $2)`, [capability, summary]);
+  }
+
+  /** Capabilities that failed at least `minCount` times in the last `sinceHours` — what the Reviewer checks each cycle. */
+  async listFailingCapabilities(sinceHours = 24, minCount = 3): Promise<FailingCapability[]> {
+    const result = await this.pool.query(
+      `select capability, count(*)::int as count, (array_agg(summary order by occurred_at desc))[1] as latest_summary
+       from jarvis.capability_failures
+       where occurred_at > now() - ($1 || ' hours')::interval
+       group by capability
+       having count(*) >= $2
+       order by count desc`,
+      [sinceHours, minCount],
+    );
+    return result.rows.map((r) => ({ capability: r.capability, count: r.count, latestSummary: r.latest_summary }));
+  }
 
   async listReviewerProposals(status?: ReviewerProposalRow["status"]): Promise<ReviewerProposalRow[]> {
     const params: unknown[] = [];

@@ -208,6 +208,64 @@ against whichever tree it finds itself running in (detected via its own
 `scriptRegistry.ts`'s migrations path. Verified against a live database
 in both dev and compiled form.
 
+## Autonomous fix loop
+
+JARVIS can detect a capability failing repeatedly and get a human-reviewed
+fix shipped for it — task #22's "JARVIS-initiated changes, approved by a
+human" — but JARVIS itself never writes or deploys code. It only ever
+detects and reports; a separate, scheduled Claude Code session does the
+actual diagnosis, fix, and PR.
+
+**Detection (`ChatService` → `jarvis.capability_failures`).** Every failed
+capability dispatch from a chat turn is recorded (`CoreOpsStore.
+recordCapabilityFailure`) — capability name and operational summary only,
+best-effort, never allowed to fail the chat turn itself.
+
+**Escalation (`Reviewer.reviewCapabilityFailures`).** Each reviewer cycle,
+any capability with 3+ failures in the last 24h becomes a
+`capability_failure` proposal (visible in the dashboard, same as any other
+proposal) **and** gets reported via `src/core/githubIssueReporter.ts` —
+which files a GitHub issue titled `[jarvis-capability-failure] <name>`,
+labeled `jarvis-auto-detected`, with the failure count and latest error.
+Deduplicated against already-open issues so a repeatedly-failing
+capability doesn't spam new issues every cycle.
+
+**Why GitHub, not a live API poll:** a scheduled Claude Code session has
+no network path back into the NUC (verified directly — the sandbox's
+egress proxy blocks it), but the NUC has ordinary outbound internet
+access to GitHub. Filing an issue is the one direction this can actually
+flow, and it doubles as a reviewable paper trail.
+
+**The fix loop itself** is a Claude Code Routine (`JARVIS capability-
+failure auto-fix loop`, cron every 6h, `create_new_session_on_fire`) — a
+fresh session each firing that: searches for open `jarvis-auto-detected`
+issues, reads the actual failing code (not just the error message) to
+find the real root cause, and — only if confident — implements the
+smallest correct fix, verifies it (`typecheck`, `test`, `build` all must
+pass), pushes a branch, and opens a PR against the dev branch referencing
+the issue. It **never merges its own PR** — that's the human review gate,
+matching every other "requires_approval" boundary in this system (see
+CLAUDE.md's self-heal trust tiers). If it can't confidently diagnose or
+fix something (needs a live credential, needs live API testing, genuinely
+ambiguous root cause), it comments on the issue explaining why instead of
+shipping a guess.
+
+**Opt-in, and inert without configuration.** `JARVIS_CRED_GITHUB_ISSUES`
+(a fine-grained PAT scoped to Issues:write on this one repo only) and
+`JARVIS_GITHUB_REPO` are both unset by default — `createGithubIssueReporter`
+returns a no-op reporter until both are set, so this integration costs
+nothing and changes no behavior for anyone who hasn't opted in.
+
+This mirrors the pattern actually used by every real open-source project
+doing AI-driven auto-remediation ([Self-Healing-SRE-Agent](
+https://github.com/jalpatel11/Self-Healing-SRE-Agent), [Kubernaut](
+https://github.com/jordigilh/kubernaut)) — diagnose and propose
+autonomously, but never apply without a human in the loop. A genuinely
+zero-review "JARVIS edits and deploys itself with nothing to stop it"
+mode was considered and explicitly rejected — see the "Bounded script
+execution" section above on why host-level deploy privilege stays a
+separate, deliberate decision.
+
 ## Ops dashboard
 
 `public/index.html` (served by `src/orchestrator/dashboard.ts`) is a

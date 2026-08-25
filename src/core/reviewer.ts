@@ -3,6 +3,8 @@ import type { CapabilityRegistry } from "../domain/capabilityRegistry.js";
 import type { MemoryStore } from "../domain/memoryStore.js";
 import type { SecurityAccess } from "./security.js";
 import { classifyTrustTier, type SelfHealActionKind } from "./trustTiers.js";
+import type { CoreOpsStore } from "./coreOpsStore.js";
+import type { GithubIssueReporter } from "./githubIssueReporter.js";
 
 export interface ErrorLogCounts {
   transient24h: number;
@@ -10,7 +12,7 @@ export interface ErrorLogCounts {
 }
 
 export interface Proposal {
-  category: "registry_health" | "memory_quality" | "error_log";
+  category: "registry_health" | "memory_quality" | "error_log" | "capability_failure";
   summary: string; // operational description only, never domain content
   trustTier: "auto_fix" | "requires_approval";
   suggestedAction?: SelfHealActionKind;
@@ -29,6 +31,8 @@ export class Reviewer {
     private readonly registry: CapabilityRegistry,
     private readonly memory: MemoryStore,
     private readonly security: SecurityAccess,
+    private readonly ops: CoreOpsStore,
+    private readonly githubReporter: GithubIssueReporter,
   ) {}
 
   async runCycle(errorLog: ErrorLogCounts): Promise<Proposal[]> {
@@ -37,9 +41,35 @@ export class Reviewer {
     proposals.push(...(await this.reviewRegistryHealth()));
     proposals.push(...(await this.reviewMemoryQuality()));
     proposals.push(...this.reviewErrorLog(errorLog));
+    proposals.push(...(await this.reviewCapabilityFailures()));
 
     for (const proposal of proposals) {
       await this.persist(proposal);
+    }
+    return proposals;
+  }
+
+  /**
+   * Escalates a capability failing repeatedly beyond the dashboard —
+   * files a GitHub issue so a scheduled Claude Code session can diagnose
+   * and fix it (see githubIssueReporter.ts). JARVIS only ever reports;
+   * it never writes or deploys the fix itself.
+   */
+  private async reviewCapabilityFailures(): Promise<Proposal[]> {
+    const proposals: Proposal[] = [];
+    const failing = await this.ops.listFailingCapabilities(24, 3);
+    for (const f of failing) {
+      proposals.push({
+        category: "capability_failure",
+        summary: `"${f.capability}" failed ${f.count}x in the last 24h — latest: ${f.latestSummary}`,
+        trustTier: "requires_approval",
+      });
+      try {
+        await this.githubReporter.reportFailure(f.capability, f.latestSummary, f.count);
+      } catch {
+        // Best-effort escalation — the dashboard proposal above already
+        // surfaces this even if the GitHub call fails (e.g. token unset).
+      }
     }
     return proposals;
   }

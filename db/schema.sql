@@ -111,6 +111,19 @@ create table if not exists jarvis.applied_migrations (
   applied_at   timestamptz not null default now()
 );
 
+-- Every failed capability dispatch from a chat turn (ChatService), so the
+-- Reviewer can notice a capability failing repeatedly rather than only
+-- ever seeing one failure at a time in a chat transcript. Deliberately
+-- lightweight — an operational count/summary trail, not a full log.
+create table if not exists jarvis.capability_failures (
+  id           uuid primary key default gen_random_uuid(),
+  capability   text not null,
+  summary      text not null,      -- operational error summary, never raw content
+  occurred_at  timestamptz not null default now()
+);
+create index if not exists idx_jarvis_capability_failures_lookup
+  on jarvis.capability_failures (capability, occurred_at desc);
+
 -- =========================================================================
 -- Role: one login role for the whole system, owning its own schema/tables
 -- so the apply-migration script can run real DDL without the running
@@ -133,6 +146,7 @@ alter table jarvis.domain_health_snapshots owner to jarvis_app;
 alter table jarvis.reviewer_proposals owner to jarvis_app;
 alter table jarvis.script_runs owner to jarvis_app;
 alter table jarvis.applied_migrations owner to jarvis_app;
+alter table jarvis.capability_failures owner to jarvis_app;
 
 -- =========================================================================
 -- Migrating from the earlier two-domain build: if `work`/`personal` schemas

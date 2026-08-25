@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type Anthropic from "@anthropic-ai/sdk";
-import { ChatService, type AnthropicMessagesClient, type SelfHealRunner } from "../src/chat/chatService.js";
+import { ChatService, type AnthropicMessagesClient, type SelfHealRunner, type CapabilityFailureRecorder } from "../src/chat/chatService.js";
 import { CapabilityRegistry, type CapabilityModule, type CapabilityRow } from "../src/domain/capabilityRegistry.js";
 import { CredentialStore } from "../src/domain/credentialStore.js";
 import { MemoryStore } from "../src/domain/memoryStore.js";
@@ -74,7 +74,11 @@ function fakeSelfHeal(): SelfHealRunner & { runScript: ReturnType<typeof vi.fn> 
   return { runScript: vi.fn(async () => ({ status: "applied" as const })) };
 }
 
-function buildHarness(anthropicResponses: Anthropic.Message[], selfHeal = fakeSelfHeal()) {
+function fakeFailureRecorder(): CapabilityFailureRecorder & { recordCapabilityFailure: ReturnType<typeof vi.fn> } {
+  return { recordCapabilityFailure: vi.fn(async () => undefined) };
+}
+
+function buildHarness(anthropicResponses: Anthropic.Message[], selfHeal = fakeSelfHeal(), failureRecorder = fakeFailureRecorder()) {
   const pool = {} as never;
   const registry = new CapabilityRegistry(pool);
   const credentials = new CredentialStore({} as NodeJS.ProcessEnv);
@@ -95,9 +99,9 @@ function buildHarness(anthropicResponses: Anthropic.Message[], selfHeal = fakeSe
   relations.writeBatch = relationsBatchSpy as never;
 
   const anthropic = fakeAnthropic(anthropicResponses);
-  const chat = new ChatService(anthropic, registry, credentials, memory, relations, selfHeal, "claude-opus-5");
+  const chat = new ChatService(anthropic, registry, credentials, memory, relations, selfHeal, failureRecorder, "claude-opus-5");
 
-  return { chat, anthropic, registry, memory, selfHeal, memoryWriteSpy, relationsBatchSpy, listSpy };
+  return { chat, anthropic, registry, memory, selfHeal, failureRecorder, memoryWriteSpy, relationsBatchSpy, listSpy };
 }
 
 describe("ChatService", () => {
@@ -149,6 +153,33 @@ describe("ChatService", () => {
       { capability: "test-capability", ok: false, summary: "test-capability failed: no credential configured" },
     ]);
     expect(result.reply).toBe("sorry, that failed");
+  });
+
+  it("records a failed capability dispatch via the failure recorder", async () => {
+    const { chat, registry, failureRecorder } = buildHarness([
+      toolUseMessage("tu_1", "test-capability", { intent: "x", payload: {} }),
+      textMessage("sorry, that failed"),
+    ]);
+    registry.loadModule = vi.fn(async () => {
+      throw new Error("no credential configured");
+    }) as never;
+
+    await chat.converse("session-1", "do it");
+    expect(failureRecorder.recordCapabilityFailure).toHaveBeenCalledWith(
+      "test-capability",
+      "test-capability failed: no credential configured",
+    );
+  });
+
+  it("does not record a failure recorder call for a successful dispatch", async () => {
+    const { chat, registry, failureRecorder } = buildHarness([
+      toolUseMessage("tu_1", "test-capability", { intent: "do.thing", payload: {} }),
+      textMessage("done"),
+    ]);
+    registry.loadModule = vi.fn(async () => ({ canHandle: () => true, handle: async () => ({ ok: true }) })) as never;
+
+    await chat.converse("session-1", "please do the thing");
+    expect(failureRecorder.recordCapabilityFailure).not.toHaveBeenCalled();
   });
 
   it("marks an unrecognized tool name as a tool_result error rather than throwing", async () => {

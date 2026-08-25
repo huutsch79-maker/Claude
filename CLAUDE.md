@@ -84,6 +84,19 @@ container, `git pull` + rebuild). That needs its own decision on how much
 access to grant (e.g. Docker socket access is effectively root on the
 host) before it's wired up.
 
+### Autonomous fix loop
+
+JARVIS detects a capability failing repeatedly and escalates it — it
+never writes or deploys a fix itself. A capability failing 3+ times in
+24h gets reported as a GitHub issue (`src/core/githubIssueReporter.ts`,
+opt-in, no-op until `JARVIS_CRED_GITHUB_ISSUES`/`JARVIS_GITHUB_REPO` are
+set). A separate scheduled Claude Code session picks up issues labeled
+`jarvis-auto-detected`, diagnoses the real root cause by reading the
+actual code, and — only if confident — opens a PR with the fix for a
+human to review and merge. It never merges its own PR. See
+docs/architecture.md's "Autonomous fix loop" section for the full design
+and why GitHub (not a live API poll) is the only direction this can flow.
+
 ### Chat interface
 
 One conversation, backed by Claude, with every enabled capability
