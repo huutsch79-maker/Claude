@@ -22,14 +22,20 @@ organized — NZB's M365 tenant and a personal Hotmail account are never
 the same secret, and using one capability never touches another's
 credential.
 
-**Delegated OAuth stays human-gated, always.** `hotmail-outlook` and
-`nzb-m365-connector` need real mailbox access, which only the mailbox
-owner can grant — JARVIS can request it via a dashboard "Connect" button
-and can automate everything downstream of that (token exchange, storage,
-refresh, no redeploy needed), but the actual Microsoft consent screen is
-never something JARVIS clicks through itself. See
-`src/domain/oauthCredentialStore.ts` and docs/architecture.md's
-"Delegated OAuth" section.
+**Delegated access stays human-gated, always.** `hotmail-outlook` and
+`nzb-m365-connector` both need real mailbox access, which only the
+mailbox owner can grant — but they get there differently on purpose.
+`nzb-m365-connector` (an NZB org mailbox) goes through real Entra OAuth:
+JARVIS can request it via a dashboard "Connect" button and automate
+everything downstream of that (token exchange, storage, refresh, no
+redeploy needed), but the actual Microsoft consent screen is never
+something JARVIS clicks through itself. `hotmail-outlook` (a personal
+mailbox with no NZB connection) instead uses an account app password over
+IMAP/SMTP — still something only the account owner can generate, just
+without needing an Entra app registration hosted in anyone's tenant. See
+`src/domain/oauthCredentialStore.ts`, `src/modules/hotmail/`, and
+docs/architecture.md's "Hotmail: IMAP/SMTP, not OAuth" and "Delegated
+OAuth" sections.
 
 Capabilities carry an optional freeform `category` label ("work",
 "personal", or anything else) purely for UI grouping — it is never an
