@@ -217,6 +217,29 @@ single `CapabilityRegistry`, `CredentialStore`, `MemoryStore`, and
 session id (a v1 limitation shared with `ApprovalGate` — lost on
 restart, fine for a single self-hosted instance).
 
+**Turns for one session are serialized, not concurrent.** A dashboard
+timeout (Cloudflare's edge gives up on a proxied request around 100s)
+doesn't cancel the turn server-side — nothing in `converse()` checks
+whether the original HTTP client is still there, so a slow multi-tool
+turn (many sequential capability calls, e.g. splitting long content
+across several `website.updateSection` calls) keeps running after the
+browser has already given up and shown an error. If the user then
+re-sends, a second turn for the same session used to start immediately,
+reading `history` before the first turn had written its update back —
+and if both turns' tool calls touched the same external resource (e.g.
+the same file in the website content repo), they'd race on it. This
+produced a real GitHub Contents API `409` (two commits racing on the
+same file's SHA) in production. `ChatService` now queues turns per
+session (`sessionQueues` in `converse()`) — a second call for the same
+session waits for the first to fully finish (success or failure) before
+it starts. This doesn't fix the underlying proxy timeout (the browser
+can still see an error for a turn that's actually still running to
+completion server-side), only the actual corruption risk from two turns
+racing on shared state; the timeout itself is a separate, not-yet-fixed
+issue (either raise the Cloudflare Tunnel's timeout, or make long turns
+respond asynchronously instead of holding the HTTP request open for the
+whole tool loop).
+
 Each turn: enabled capabilities become tools (a uniform `{intent,
 payload}` schema, since that's what both starter connectors already
 implement), plus three always-available **render tools** —

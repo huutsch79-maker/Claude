@@ -229,6 +229,106 @@ describe("ChatService", () => {
     expect(secondCallParams.messages).toHaveLength(3);
   });
 
+  it("serializes concurrent turns for the same session instead of racing (regression: a slow turn plus a re-send raced two capability calls on the same farm-website file, producing a real GitHub 409)", async () => {
+    const pool = {} as never;
+    const registry = new CapabilityRegistry(pool);
+    registry.list = vi.fn(async () => [capabilityRow()]) as never;
+    const credentials = new CredentialStore({} as NodeJS.ProcessEnv);
+    const memory = new MemoryStore(pool, {
+      embed: async () => {
+        throw new Error("no embedding provider configured");
+      },
+    } as EmbeddingProvider);
+    memory.write = vi.fn(async () => "mem-id-1") as never;
+    const relations = new RelationsStore(pool);
+    relations.writeBatch = vi.fn(async () => undefined) as never;
+
+    let releaseFirst: () => void = () => {};
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const order: string[] = [];
+    let callCount = 0;
+    const anthropic: AnthropicMessagesClient = {
+      messages: {
+        create: vi.fn(async () => {
+          callCount++;
+          if (callCount === 1) {
+            order.push("first-start");
+            await firstGate;
+            order.push("first-end");
+            return textMessage("first reply");
+          }
+          order.push("second-start");
+          return textMessage("second reply");
+        }),
+      },
+    };
+
+    const chat = new ChatService(
+      anthropic,
+      registry,
+      credentials,
+      memory,
+      relations,
+      fakeSelfHeal(),
+      fakeFailureRecorder(),
+      fakeOAuth(),
+      "claude-opus-5",
+    );
+
+    const firstTurn = chat.converse("session-1", "one");
+    const secondTurn = chat.converse("session-1", "two"); // fired without awaiting the first — this is the re-send scenario
+
+    // Give the event loop plenty of chances to (wrongly) start the second
+    // turn's Anthropic call while the first is still pending — a real
+    // macrotask, not just a microtask flush, so this genuinely catches a
+    // regression back to unserialized/concurrent turns.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(order).toEqual(["first-start"]);
+
+    releaseFirst();
+    const [firstResult, secondResult] = await Promise.all([firstTurn, secondTurn]);
+
+    expect(order).toEqual(["first-start", "first-end", "second-start"]);
+    expect(firstResult.reply).toBe("first reply");
+    expect(secondResult.reply).toBe("second reply");
+  });
+
+  it("still lets a later turn proceed after an earlier turn in the same session throws", async () => {
+    const pool = {} as never;
+    const registry = new CapabilityRegistry(pool);
+    registry.list = vi.fn(async () => {
+      throw new Error("registry unavailable");
+    }) as never;
+    const credentials = new CredentialStore({} as NodeJS.ProcessEnv);
+    const memory = new MemoryStore(pool, {
+      embed: async () => {
+        throw new Error("no embedding provider configured");
+      },
+    } as EmbeddingProvider);
+    const relations = new RelationsStore(pool);
+
+    const anthropic = fakeAnthropic([textMessage("second reply")]);
+    const chat = new ChatService(
+      anthropic,
+      registry,
+      credentials,
+      memory,
+      relations,
+      fakeSelfHeal(),
+      fakeFailureRecorder(),
+      fakeOAuth(),
+      "claude-opus-5",
+    );
+
+    await expect(chat.converse("session-1", "one")).rejects.toThrow("registry unavailable");
+
+    registry.list = vi.fn(async () => [capabilityRow()]) as never;
+    const result = await chat.converse("session-1", "two");
+    expect(result.reply).toBe("second reply");
+  });
+
   it("stops after the iteration cap instead of looping forever on repeated tool_use", async () => {
     const { chat, registry } = buildHarness(Array.from({ length: 10 }, () => toolUseMessage("tu", "test-capability", {})));
     registry.loadModule = vi.fn(async () => ({ canHandle: () => true, handle: async () => "ok" })) as never;

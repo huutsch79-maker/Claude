@@ -92,6 +92,22 @@ const SUPPORTED_ATTACHMENT_TYPES = /^image\/(png|jpeg|gif|webp)$|^application\/p
 export class ChatService {
   private readonly histories = new Map<string, Anthropic.MessageParam[]>();
 
+  /**
+   * One in-flight turn per session at a time. Without this, a second
+   * message arriving for the same session while the first turn is still
+   * running (e.g. the user re-sends after their browser/Cloudflare gave up
+   * waiting on a slow multi-tool-call turn, while the original turn keeps
+   * running server-side — nothing here cancels it just because the client
+   * disconnected) reads `history` before the first turn has written its
+   * update back, then both turns independently call the same capability
+   * against the same external file. That's exactly what produced a real
+   * GitHub Contents API 409 (concurrent commits racing on the same file's
+   * SHA) on the farm-website module. Queuing per session — not globally —
+   * keeps unrelated conversations (there's only ever one here, but this
+   * still holds if that changes) from blocking each other.
+   */
+  private readonly sessionQueues = new Map<string, Promise<unknown>>();
+
   constructor(
     private readonly anthropic: AnthropicMessagesClient,
     private readonly registry: CapabilityRegistry,
@@ -106,6 +122,16 @@ export class ChatService {
   ) {}
 
   async converse(sessionId: string, userMessage: string, attachments: ChatAttachment[] = []): Promise<ChatTurnResult> {
+    const priorTurn = this.sessionQueues.get(sessionId) ?? Promise.resolve();
+    const thisTurn = priorTurn.catch(() => {}).then(() => this.converseSerialized(sessionId, userMessage, attachments));
+    this.sessionQueues.set(
+      sessionId,
+      thisTurn.catch(() => {}), // queue tracks completion only, never rejects — a failed turn must not jam the queue for the next one
+    );
+    return thisTurn;
+  }
+
+  private async converseSerialized(sessionId: string, userMessage: string, attachments: ChatAttachment[]): Promise<ChatTurnResult> {
     const history = this.histories.get(sessionId) ?? [];
     history.push({ role: "user", content: buildUserContent(userMessage, attachments) });
 
