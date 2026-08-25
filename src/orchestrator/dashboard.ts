@@ -28,6 +28,11 @@ export function createDashboardServer(orchestrator: Orchestrator): Server {
   }
 
   app.use("/api", (req: Request, res: Response, next: NextFunction) => {
+    // Hit directly by Microsoft's browser redirect after OAuth consent — a
+    // top-level navigation can't carry an Authorization header, so this one
+    // route can't sit behind bearer auth. Its security comes from the
+    // single-use `state` param instead (OAuthCredentialStore.completeAuthorization).
+    if (req.path === "/oauth/callback") return next();
     if (!token) return next(); // dev mode, see warning above
     const header = req.header("authorization");
     if (header === `Bearer ${token}`) return next();

@@ -69,6 +69,16 @@ describe("dashboard server", () => {
     expect(res.status).toBe(400);
   });
 
+  it("reaches /api/oauth/callback without a bearer token (Microsoft's redirect can't carry one)", async () => {
+    const res = await fetch(`${baseUrl}/api/oauth/callback`);
+    expect(res.status).not.toBe(401); // 400 (missing code/state) is fine — the point is it's not rejected by auth
+  });
+
+  it("still requires auth for the authorize-url route (fetched via authenticated JS, not a raw redirect)", async () => {
+    const res = await fetch(`${baseUrl}/api/oauth/hotmail-oauth/authorize-url`);
+    expect(res.status).toBe(401);
+  });
+
   it("serves the static dashboard page", async () => {
     const res = await fetch(`${baseUrl}/`);
     expect(res.status).toBe(200);
