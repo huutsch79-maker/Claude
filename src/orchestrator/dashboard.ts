@@ -49,23 +49,47 @@ export function createDashboardServer(orchestrator: Orchestrator): Server {
     res.json(listScripts().map((s) => ({ name: s.name, description: s.description, trustTier: s.trustTier })));
   });
 
+  // Every DB-backed route below is wrapped in try/catch for the same
+  // reason the scripts approve/reject routes already were: an async
+  // Express handler that awaits a rejected promise with no try/catch of
+  // its own becomes an unhandled rejection, and Node terminates the
+  // whole process on those by default (Express 4 doesn't catch async
+  // handler rejections itself — that's an Express 5 behavior). A
+  // transient DB blip must degrade one dashboard panel, not take down
+  // chat and everything else running in this same process.
   app.get("/api/proposals", async (req, res) => {
-    const status = req.query.status as "pending" | "approved" | "rejected" | "applied" | undefined;
-    res.json(await jarvis.ops.listReviewerProposals(status));
+    try {
+      const status = req.query.status as "pending" | "approved" | "rejected" | "applied" | undefined;
+      res.json(await jarvis.ops.listReviewerProposals(status));
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
   });
 
   app.post("/api/proposals/:id/approve", async (req, res) => {
-    const ok = await jarvis.ops.setReviewerProposalStatus(req.params.id!, "approved");
-    res.status(ok ? 200 : 404).json({ ok });
+    try {
+      const ok = await jarvis.ops.setReviewerProposalStatus(req.params.id!, "approved");
+      res.status(ok ? 200 : 404).json({ ok });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
+    }
   });
 
   app.post("/api/proposals/:id/reject", async (req, res) => {
-    const ok = await jarvis.ops.setReviewerProposalStatus(req.params.id!, "rejected");
-    res.status(ok ? 200 : 404).json({ ok });
+    try {
+      const ok = await jarvis.ops.setReviewerProposalStatus(req.params.id!, "rejected");
+      res.status(ok ? 200 : 404).json({ ok });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
+    }
   });
 
   app.get("/api/script-runs", async (_req, res) => {
-    res.json(await jarvis.ops.listScriptRuns());
+    try {
+      res.json(await jarvis.ops.listScriptRuns());
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
   });
 
   app.post("/api/scripts/:name/run", async (req, res) => {
@@ -116,26 +140,34 @@ export function createDashboardServer(orchestrator: Orchestrator): Server {
   });
 
   app.get("/api/capabilities", async (_req, res) => {
-    const rows = await jarvis.registry.list();
-    const withCaps = await Promise.all(
-      rows.map(async (r) => ({
-        name: r.name,
-        category: r.category,
-        enabled: r.enabled,
-        priority: r.priority,
-        credentialRef: r.credentialRef,
-        modelOverride: r.modelOverride,
-        oauthConfigured: r.credentialRef ? jarvis.oauthCredentials.isConfigured(r.credentialRef) : false,
-        oauthConnected: r.credentialRef ? await jarvis.oauthCredentials.isConnected(r.credentialRef) : false,
-      })),
-    );
-    res.json(withCaps);
+    try {
+      const rows = await jarvis.registry.list();
+      const withCaps = await Promise.all(
+        rows.map(async (r) => ({
+          name: r.name,
+          category: r.category,
+          enabled: r.enabled,
+          priority: r.priority,
+          credentialRef: r.credentialRef,
+          modelOverride: r.modelOverride,
+          oauthConfigured: r.credentialRef ? jarvis.oauthCredentials.isConfigured(r.credentialRef) : false,
+          oauthConnected: r.credentialRef ? await jarvis.oauthCredentials.isConnected(r.credentialRef) : false,
+        })),
+      );
+      res.json(withCaps);
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
   });
 
   app.post("/api/capabilities/:name/enabled", async (req, res) => {
-    const enabled = Boolean(req.body?.enabled);
-    await jarvis.registry.setEnabled(req.params.name!, enabled);
-    res.json({ ok: true });
+    try {
+      const enabled = Boolean(req.body?.enabled);
+      await jarvis.registry.setEnabled(req.params.name!, enabled);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
+    }
   });
 
   // Fetched via authenticated JS (not a raw browser nav) so it stays behind

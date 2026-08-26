@@ -161,11 +161,14 @@ what that would take.
 
 ### Ops dashboard
 
-A single-page view (`public/index.html`, served by
-`src/orchestrator/dashboard.ts`) covering chat, health, pending reviewer
+A single-page view (frontend source in `dashboard/` — a Vite/Preact/
+TypeScript project, its own `package.json`; builds to `public/`, served
+by `src/orchestrator/dashboard.ts`) covering chat (markdown + code
+rendering, paste-to-attach screenshots), health, pending reviewer
 proposals, the script registry (run/approve/reject), script run history,
 and the capability registry (enable/disable, grouped by category).
-Bearer-token gated (`JARVIS_DASHBOARD_TOKEN`).
+Bearer-token gated (`JARVIS_DASHBOARD_TOKEN`). See docs/architecture.md's
+"Ops dashboard" section for the build wiring.
 
 ### Explicitly out of scope for v1
 

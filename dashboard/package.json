@@ -1,0 +1,24 @@
+{
+  "name": "jarvis-dashboard",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Frontend for the JARVIS ops dashboard — built separately from the orchestrator (its own toolchain, its own package.json) and its build output lands in ../public, which the orchestrator serves as static files. See docs/architecture.md's Ops dashboard section.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "dompurify": "^3.2.7",
+    "highlight.js": "^11.11.1",
+    "marked": "^14.1.4",
+    "preact": "^10.29.8"
+  },
+  "devDependencies": {
+    "@preact/preset-vite": "^2.10.2",
+    "@types/dompurify": "^3.0.5",
+    "typescript": "^5.9.3",
+    "vite": "^5.4.20"
+  }
+}

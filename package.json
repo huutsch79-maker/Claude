@@ -8,12 +8,14 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "npm run build:dashboard && tsc -p tsconfig.json",
+    "build:dashboard": "npm --prefix dashboard install && npm --prefix dashboard run build",
     "start": "node dist/src/orchestrator/index.js",
     "dev": "tsx src/orchestrator/index.ts",
+    "dev:dashboard": "npm --prefix dashboard run dev",
     "seed": "tsx scripts/seed-registry.ts",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && npm --prefix dashboard run typecheck"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.68.0",

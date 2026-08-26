@@ -249,8 +249,9 @@ awaits the turn: it calls `ChatService.startTurn()`, which kicks off
 `GET /api/chat/:sessionId/poll` reports the session's current
 `ChatTurnStatus` (`idle` / `running` / `done` / `error`) — `done` and
 `error` are consumed on read (reset to `idle`), so a later poll after
-the next message doesn't replay a stale result. `public/index.html`
-polls that endpoint every 2s (up to a 20-minute cap) after sending,
+the next message doesn't replay a stale result. The dashboard frontend
+(`dashboard/src/useChat.ts`) polls that endpoint every 2s (up to a
+20-minute cap) after sending,
 instead of awaiting one long request. No request stays open longer than
 one poll interval, so this can't 524 regardless of how many tool calls a
 turn needs.
@@ -538,14 +539,55 @@ later chat turn) wants to check afterward.
 
 ## Ops dashboard
 
-`public/index.html` (served by `src/orchestrator/dashboard.ts`) is a
-single-page view: a sidebar (health, pending proposals, scripts + run
-history, capabilities grouped by their freeform category) and a chat
-panel as the main surface, since talking to JARVIS is the primary way of
-using it now — not two separate work/personal columns. Bearer-token
-gated (`JARVIS_DASHBOARD_TOKEN`); binds `0.0.0.0` by default since
-`127.0.0.1` inside a container is unreachable via Docker's port mapping
-even from the host's own loopback.
+Same single-page view as before — a sidebar (health, pending proposals,
+scripts + run history, capabilities grouped by their freeform category)
+and a chat panel as the main surface, since talking to JARVIS is the
+primary way of using it now, not two separate work/personal columns.
+Bearer-token gated (`JARVIS_DASHBOARD_TOKEN`); binds `0.0.0.0` by default
+since `127.0.0.1` inside a container is unreachable via Docker's port
+mapping even from the host's own loopback. `src/orchestrator/dashboard.ts`
+still just serves `public/` as static files (`express.static`) —
+unchanged.
+
+**The frontend is a real project now, not a hand-written HTML file.**
+`dashboard/` (its own `package.json`, separate from the orchestrator's,
+same pattern as `deploy-agent/` and `website-server/`) is a Vite +
+Preact + TypeScript app. `dashboard/vite.config.ts`'s `outDir` points at
+`../public`, so `npm run build` inside `dashboard/` produces exactly
+what `express.static` already expected to find there — the serving side
+never had to change. `public/` is now generated, not checked in (see
+`.gitignore`); the root `npm run build`/`npm run typecheck` both build
+and typecheck the dashboard first via `npm run build:dashboard` before
+touching the orchestrator itself. The Docker build mirrors this: a
+`dashboard-build` stage builds the frontend independently, then its
+output is `COPY --from=`'d into the orchestrator image at the same
+`public/` path (see root `Dockerfile`).
+
+Chat rendering: assistant replies (never the user's own typed text) go
+through `marked` + `highlight.js` for markdown and code-block syntax
+highlighting, sanitized with `dompurify` before ever reaching
+`dangerouslySetInnerHTML` — defense in depth against the model echoing
+back something that looks like markup it shouldn't, not a scenario
+that's expected to occur. Every sidebar action that can fail (approve/
+reject/run/connect/enable/disable) surfaces a toast on error instead of
+either `alert()` or, worse, silently doing nothing — see "the dashboard
+silently swallowed failed actions" below for why that mattered. Message
+attachments can be added by file picker or by pasting an image directly
+into the composer (`attachmentsFromClipboard` in `dashboard/src/attachments.ts`).
+
+**Found and fixed while testing this rewrite: most of `dashboard.ts`'s
+DB-backed routes had no try/catch.** `GET /api/proposals`, `POST
+/api/proposals/:id/approve`, `POST /api/proposals/:id/reject`, `GET
+/api/script-runs`, `GET /api/capabilities`, and `POST
+/api/capabilities/:name/enabled` all awaited a DB call with no try/catch
+of their own — the same unhandled-rejection-crashes-the-process failure
+mode as the `apply-website-file`/`redeploy-jarvis` approval routes
+(fixed earlier; see their own history). Caught by accident: booting the
+real dashboard server against this repo's test suite pattern (no live
+Postgres) to screenshot the new frontend crashed the whole process the
+moment the sidebar's first `/api/proposals` fetch ran. All six now
+return `500` with an error message instead — a database hiccup should
+degrade one panel, not take the whole orchestrator down with it.
 
 ## What's explicitly out of scope here
 

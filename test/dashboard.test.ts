@@ -119,4 +119,82 @@ describe("dashboard server", () => {
     const health = await fetch(`${baseUrl}/api/health`, { headers: { authorization: `Bearer ${TOKEN}` } });
     expect(health.status).toBe(200);
   });
+
+  // Same regression class as above, found by accident while testing the
+  // dashboard's frontend rewrite against a real orchestrator with no
+  // database reachable: every DB-backed route here awaited a rejected
+  // promise with no try/catch of its own, so a plain DB outage (not even
+  // a bug — just Postgres being briefly unreachable) crashed the whole
+  // process. One test per route, each confirming a 500 (not a crash) and
+  // that the server is still answering afterward.
+  it("a failing GET /api/proposals returns 500 instead of crashing the process", async () => {
+    orchestrator.jarvis.ops.listReviewerProposals = (async () => {
+      throw new Error("db unreachable");
+    }) as typeof orchestrator.jarvis.ops.listReviewerProposals;
+
+    const res = await fetch(`${baseUrl}/api/proposals`, { headers: { authorization: `Bearer ${TOKEN}` } });
+    expect(res.status).toBe(500);
+    expect(((await res.json()) as { error: string }).error).toContain("db unreachable");
+
+    const health = await fetch(`${baseUrl}/api/health`, { headers: { authorization: `Bearer ${TOKEN}` } });
+    expect(health.status).toBe(200);
+  });
+
+  it("a failing proposal approve/reject returns 500 instead of crashing the process", async () => {
+    orchestrator.jarvis.ops.setReviewerProposalStatus = (async () => {
+      throw new Error("db unreachable");
+    }) as typeof orchestrator.jarvis.ops.setReviewerProposalStatus;
+
+    for (const action of ["approve", "reject"] as const) {
+      const res = await fetch(`${baseUrl}/api/proposals/some-id/${action}`, { method: "POST", headers: { authorization: `Bearer ${TOKEN}` } });
+      expect(res.status).toBe(500);
+      expect(((await res.json()) as { error: string }).error).toContain("db unreachable");
+    }
+
+    const health = await fetch(`${baseUrl}/api/health`, { headers: { authorization: `Bearer ${TOKEN}` } });
+    expect(health.status).toBe(200);
+  });
+
+  it("a failing GET /api/script-runs returns 500 instead of crashing the process", async () => {
+    orchestrator.jarvis.ops.listScriptRuns = (async () => {
+      throw new Error("db unreachable");
+    }) as typeof orchestrator.jarvis.ops.listScriptRuns;
+
+    const res = await fetch(`${baseUrl}/api/script-runs`, { headers: { authorization: `Bearer ${TOKEN}` } });
+    expect(res.status).toBe(500);
+    expect(((await res.json()) as { error: string }).error).toContain("db unreachable");
+
+    const health = await fetch(`${baseUrl}/api/health`, { headers: { authorization: `Bearer ${TOKEN}` } });
+    expect(health.status).toBe(200);
+  });
+
+  it("a failing GET /api/capabilities returns 500 instead of crashing the process", async () => {
+    orchestrator.jarvis.registry.list = (async () => {
+      throw new Error("db unreachable");
+    }) as typeof orchestrator.jarvis.registry.list;
+
+    const res = await fetch(`${baseUrl}/api/capabilities`, { headers: { authorization: `Bearer ${TOKEN}` } });
+    expect(res.status).toBe(500);
+    expect(((await res.json()) as { error: string }).error).toContain("db unreachable");
+
+    const health = await fetch(`${baseUrl}/api/health`, { headers: { authorization: `Bearer ${TOKEN}` } });
+    expect(health.status).toBe(200);
+  });
+
+  it("a failing capability enable/disable returns 500 instead of crashing the process", async () => {
+    orchestrator.jarvis.registry.setEnabled = (async () => {
+      throw new Error("db unreachable");
+    }) as typeof orchestrator.jarvis.registry.setEnabled;
+
+    const res = await fetch(`${baseUrl}/api/capabilities/farm-website/enabled`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${TOKEN}`, "content-type": "application/json" },
+      body: JSON.stringify({ enabled: true }),
+    });
+    expect(res.status).toBe(500);
+    expect(((await res.json()) as { error: string }).error).toContain("db unreachable");
+
+    const health = await fetch(`${baseUrl}/api/health`, { headers: { authorization: `Bearer ${TOKEN}` } });
+    expect(health.status).toBe(200);
+  });
 });
