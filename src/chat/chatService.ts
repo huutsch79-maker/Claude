@@ -72,6 +72,12 @@ export interface ChatTurnResult {
   widgets: ChatWidget[];
 }
 
+export type ChatTurnStatus =
+  | { state: "idle" }
+  | { state: "running" }
+  | { state: "done"; result: ChatTurnResult }
+  | { state: "error"; message: string };
+
 const MAX_TOOL_ITERATIONS = 8;
 const DEFAULT_MAX_TOKENS = 4096;
 const SUPPORTED_ATTACHMENT_TYPES = /^image\/(png|jpeg|gif|webp)$|^application\/pdf$/;
@@ -108,6 +114,20 @@ export class ChatService {
    */
   private readonly sessionQueues = new Map<string, Promise<unknown>>();
 
+  /**
+   * Last known status of a session's most recent turn, for startTurn()/
+   * pollTurn() below — the fire-and-poll counterpart to converse(). A
+   * multi-tool-call turn (several sequential capability calls, each its
+   * own Claude round-trip and external API call) can genuinely take
+   * longer than Cloudflare's ~100s edge timeout on a proxied HTTP
+   * request; that's not fixable from this side (nothing in a Tunnel's
+   * origin config extends the edge's own limit), so instead of holding
+   * the HTTP response open for the whole turn, the dashboard starts a
+   * turn and polls for its result — no request stays open long enough to
+   * hit any timeout, regardless of how many tool calls a turn needs.
+   */
+  private readonly turnStatus = new Map<string, ChatTurnStatus>();
+
   constructor(
     private readonly anthropic: AnthropicMessagesClient,
     private readonly registry: CapabilityRegistry,
@@ -129,6 +149,35 @@ export class ChatService {
       thisTurn.catch(() => {}), // queue tracks completion only, never rejects — a failed turn must not jam the queue for the next one
     );
     return thisTurn;
+  }
+
+  /**
+   * Fire-and-poll counterpart to converse() — starts a turn (still
+   * serialized behind any turn already running for this session, via
+   * converse() itself) without making the caller wait for it to finish.
+   * Overwrites any previous settled status for this session; a caller
+   * that cares about missing a fast turn should poll before starting a
+   * new one, not after.
+   */
+  startTurn(sessionId: string, userMessage: string, attachments: ChatAttachment[] = []): void {
+    this.turnStatus.set(sessionId, { state: "running" });
+    this.converse(sessionId, userMessage, attachments)
+      .then((result) => this.turnStatus.set(sessionId, { state: "done", result }))
+      .catch((err) => this.turnStatus.set(sessionId, { state: "error", message: err instanceof Error ? err.message : String(err) }));
+  }
+
+  /**
+   * Current status of a session's most recent startTurn() call. Reading a
+   * settled status ("done"/"error") consumes it — resets to "idle" — so a
+   * later poll (e.g. after the user sends a fresh message) doesn't replay
+   * a stale result from a previous turn.
+   */
+  pollTurn(sessionId: string): ChatTurnStatus {
+    const status = this.turnStatus.get(sessionId) ?? { state: "idle" };
+    if (status.state === "done" || status.state === "error") {
+      this.turnStatus.set(sessionId, { state: "idle" });
+    }
+    return status;
   }
 
   private async converseSerialized(sessionId: string, userMessage: string, attachments: ChatAttachment[]): Promise<ChatTurnResult> {

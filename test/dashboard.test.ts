@@ -74,6 +74,11 @@ describe("dashboard server", () => {
     expect(res.status).toBe(400);
   });
 
+  it("rejects a poll for an unconfigured chat with 503", async () => {
+    const res = await fetch(`${baseUrl}/api/chat/s1/poll`, { headers: { authorization: `Bearer ${TOKEN}` } });
+    expect(res.status).toBe(503);
+  });
+
   it("reaches /api/oauth/callback without a bearer token (Microsoft's redirect can't carry one)", async () => {
     const res = await fetch(`${baseUrl}/api/oauth/callback`);
     expect(res.status).not.toBe(401); // 400 (missing code/state) is fine — the point is it's not rejected by auth

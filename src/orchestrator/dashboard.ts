@@ -177,7 +177,15 @@ export function createDashboardServer(orchestrator: Orchestrator): Server {
     }
   });
 
-  app.post("/api/chat", async (req, res) => {
+  // Starts a turn and returns immediately — does NOT wait for it to
+  // finish. A multi-tool-call turn (several sequential capability calls,
+  // each its own model round-trip plus an external API call) can
+  // genuinely take longer than Cloudflare's ~100s edge timeout on a
+  // proxied request; nothing on this side can extend that limit, so
+  // instead the dashboard polls GET /api/chat/:sessionId/poll for the
+  // result. No request stays open long enough to hit any timeout,
+  // regardless of how long the turn actually takes.
+  app.post("/api/chat", (req, res) => {
     const sessionId = typeof req.body?.sessionId === "string" ? req.body.sessionId : null;
     const message = typeof req.body?.message === "string" ? req.body.message : null;
     if (!sessionId || !message) {
@@ -193,13 +201,16 @@ export function createDashboardServer(orchestrator: Orchestrator): Server {
       res.status(503).json({ error: "chat is not configured (ANTHROPIC_API_KEY unset)" });
       return;
     }
-    try {
-      const result = await jarvis.chat.converse(sessionId, message, attachments);
-      res.json(result);
-    } catch (err) {
-      console.error("[chat] /api/chat failed:", err);
-      res.status(502).json({ error: err instanceof Error ? err.message : String(err) });
+    jarvis.chat.startTurn(sessionId, message, attachments);
+    res.status(202).json({ accepted: true });
+  });
+
+  app.get("/api/chat/:sessionId/poll", (req, res) => {
+    if (!jarvis.chat) {
+      res.status(503).json({ error: "chat is not configured (ANTHROPIC_API_KEY unset)" });
+      return;
     }
+    res.json(jarvis.chat.pollTurn(req.params.sessionId!));
   });
 
   return createServer(app);

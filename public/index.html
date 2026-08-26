@@ -300,8 +300,14 @@ async function sendMessage() {
   const input = document.getElementById("messageInput");
   const text = input.value.trim();
   if (!text && pendingAttachments.length === 0) return;
-  input.value = "";
   const sendBtn = document.getElementById("sendBtn");
+  // Guards against a second send racing the first turn's poll loop —
+  // both would read the same session's poll status and could each grab
+  // the other's result. The button is disabled for the duration of a
+  // turn specifically to prevent this, so honor that here too, since
+  // Enter-to-send doesn't go through the button's own disabled state.
+  if (sendBtn.disabled) return;
+  input.value = "";
   sendBtn.disabled = true;
 
   const log = chatLog();
@@ -314,17 +320,47 @@ async function sendMessage() {
   renderPendingAttachments();
 
   try {
-    const result = await api("/api/chat", {
+    await api("/api/chat", {
       method: "POST",
       body: JSON.stringify({ sessionId, message: text, attachments: attachmentsToSend }),
     });
-    const withReply = chatLog();
-    withReply.push({ role: "assistant", text: result.reply, toolCalls: result.toolCalls, widgets: result.widgets });
-    saveChatLog(withReply);
+    // The turn now runs in the background — poll for it instead of
+    // holding this request open, since a multi-tool-call turn can
+    // legitimately take longer than Cloudflare's edge will hold a
+    // connection open (that's what used to show up as "error: HTTP 524"
+    // even when the turn was actually still working).
+    await pollForReply();
   } catch (e) {
     const withError = chatLog();
     withError.push({ role: "assistant", text: "(error: " + e.message + ")" });
     saveChatLog(withError);
+    sendBtn.disabled = false;
+    renderChatLog();
+  }
+}
+
+const POLL_INTERVAL_MS = 2000;
+const POLL_TIMEOUT_MS = 20 * 60 * 1000; // generous — a long content edit can mean many sequential tool calls
+
+async function pollForReply() {
+  const sendBtn = document.getElementById("sendBtn");
+  const deadline = Date.now() + POLL_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    const status = await api(`/api/chat/${encodeURIComponent(sessionId)}/poll`);
+    if (status.state === "done") {
+      const withReply = chatLog();
+      withReply.push({ role: "assistant", text: status.result.reply, toolCalls: status.result.toolCalls, widgets: status.result.widgets });
+      saveChatLog(withReply);
+      break;
+    }
+    if (status.state === "error") {
+      const withError = chatLog();
+      withError.push({ role: "assistant", text: "(error: " + status.message + ")" });
+      saveChatLog(withError);
+      break;
+    }
+    // "running" or "idle" (a stale poll racing the turn's own startup) — keep waiting.
+    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
   }
   sendBtn.disabled = false;
   renderChatLog();

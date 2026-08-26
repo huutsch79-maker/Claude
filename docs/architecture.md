@@ -232,13 +232,28 @@ produced a real GitHub Contents API `409` (two commits racing on the
 same file's SHA) in production. `ChatService` now queues turns per
 session (`sessionQueues` in `converse()`) — a second call for the same
 session waits for the first to fully finish (success or failure) before
-it starts. This doesn't fix the underlying proxy timeout (the browser
-can still see an error for a turn that's actually still running to
-completion server-side), only the actual corruption risk from two turns
-racing on shared state; the timeout itself is a separate, not-yet-fixed
-issue (either raise the Cloudflare Tunnel's timeout, or make long turns
-respond asynchronously instead of holding the HTTP request open for the
-whole tool loop).
+it starts. This fixed the corruption risk from two turns racing on
+shared state, but not the underlying proxy timeout itself — that's a
+separate fix, below.
+
+**Chat turns are fire-and-poll, not request/response.** Cloudflare
+enforces its ~100s edge timeout on every proxied HTTP request; nothing
+in the Tunnel's origin config extends it, so a multi-tool-call turn that
+legitimately takes longer (several sequential `website.updateSection`
+calls, each its own model round-trip plus a GitHub API call) will always
+eventually 524 if the dashboard just holds the connection open and waits
+— even though, per the serialization fix above, the turn keeps running
+to completion regardless. `POST /api/chat` (`dashboard.ts`) no longer
+awaits the turn: it calls `ChatService.startTurn()`, which kicks off
+`converse()` without blocking, and returns `202` immediately.
+`GET /api/chat/:sessionId/poll` reports the session's current
+`ChatTurnStatus` (`idle` / `running` / `done` / `error`) — `done` and
+`error` are consumed on read (reset to `idle`), so a later poll after
+the next message doesn't replay a stale result. `public/index.html`
+polls that endpoint every 2s (up to a 20-minute cap) after sending,
+instead of awaiting one long request. No request stays open longer than
+one poll interval, so this can't 524 regardless of how many tool calls a
+turn needs.
 
 Each turn: enabled capabilities become tools (a uniform `{intent,
 payload}` schema, since that's what both starter connectors already

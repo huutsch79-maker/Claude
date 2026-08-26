@@ -329,6 +329,91 @@ describe("ChatService", () => {
     expect(result.reply).toBe("second reply");
   });
 
+  it("pollTurn reports idle before any turn, running mid-turn, then done — and consumes the result", async () => {
+    const pool = {} as never;
+    const registry = new CapabilityRegistry(pool);
+    registry.list = vi.fn(async () => [capabilityRow()]) as never;
+    const credentials = new CredentialStore({} as NodeJS.ProcessEnv);
+    const memory = new MemoryStore(pool, {
+      embed: async () => {
+        throw new Error("no embedding provider configured");
+      },
+    } as EmbeddingProvider);
+    memory.write = vi.fn(async () => "mem-id-1") as never;
+    const relations = new RelationsStore(pool);
+    relations.writeBatch = vi.fn(async () => undefined) as never;
+
+    let releaseCreate: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      releaseCreate = resolve;
+    });
+    const anthropic: AnthropicMessagesClient = {
+      messages: {
+        create: vi.fn(async () => {
+          await gate;
+          return textMessage("done via startTurn");
+        }),
+      },
+    };
+    const chat = new ChatService(
+      anthropic,
+      registry,
+      credentials,
+      memory,
+      relations,
+      fakeSelfHeal(),
+      fakeFailureRecorder(),
+      fakeOAuth(),
+      "claude-opus-5",
+    );
+
+    expect(chat.pollTurn("session-1")).toEqual({ state: "idle" });
+
+    chat.startTurn("session-1", "hi");
+    expect(chat.pollTurn("session-1")).toEqual({ state: "running" });
+    expect(chat.pollTurn("session-1")).toEqual({ state: "running" }); // polling again mid-turn doesn't consume anything
+
+    releaseCreate();
+    await new Promise((resolve) => setTimeout(resolve, 20)); // let the turn's promise chain settle
+
+    const done = chat.pollTurn("session-1");
+    expect(done).toEqual({ state: "done", result: { reply: "done via startTurn", toolCalls: [], widgets: [] } });
+    expect(chat.pollTurn("session-1")).toEqual({ state: "idle" }); // consumed — a later poll doesn't replay it
+  });
+
+  it("pollTurn reports an error state (consumed the same way as done) when the turn's promise rejects", async () => {
+    const pool = {} as never;
+    const registry = new CapabilityRegistry(pool);
+    registry.list = vi.fn(async () => {
+      throw new Error("registry unavailable");
+    }) as never;
+    const credentials = new CredentialStore({} as NodeJS.ProcessEnv);
+    const memory = new MemoryStore(pool, {
+      embed: async () => {
+        throw new Error("no embedding provider configured");
+      },
+    } as EmbeddingProvider);
+    const relations = new RelationsStore(pool);
+    const anthropic = fakeAnthropic([]);
+    const chat = new ChatService(
+      anthropic,
+      registry,
+      credentials,
+      memory,
+      relations,
+      fakeSelfHeal(),
+      fakeFailureRecorder(),
+      fakeOAuth(),
+      "claude-opus-5",
+    );
+
+    chat.startTurn("session-1", "hi");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(chat.pollTurn("session-1")).toEqual({ state: "error", message: "registry unavailable" });
+    expect(chat.pollTurn("session-1")).toEqual({ state: "idle" });
+  });
+
   it("stops after the iteration cap instead of looping forever on repeated tool_use", async () => {
     const { chat, registry } = buildHarness(Array.from({ length: 10 }, () => toolUseMessage("tu", "test-capability", {})));
     registry.loadModule = vi.fn(async () => ({ canHandle: () => true, handle: async () => "ok" })) as never;
