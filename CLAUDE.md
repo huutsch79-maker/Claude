@@ -88,13 +88,22 @@ actual cleanup goes through a human with PIM-activated access, not JARVIS.
 
 * **Auto-fix, no approval needed**: reversible, single-system issues —
   module crash/restart, stale cache, high-confidence duplicate memory
-  cleanup, transient API retry, routine DB maintenance (`vacuum-analyze`).
+  cleanup, transient API retry, routine DB maintenance (`vacuum-analyze`);
+  also, per explicit user decision, structural website changes
+  (`apply-website-file` — templates, config, dependencies, any file in
+  the website repo other than `.github/`) even though a bad file there
+  can break the whole site's build. The user weighed that risk
+  deliberately and chose instant over gated for this one script — it is
+  not the default outcome of "structural," see below.
 * **Requires approval** (Pushover, propose-then-approve): anything
-  touching credentials, any structural/schema change (`apply-migration`),
+  touching credentials, any schema change (`apply-migration`),
+  self-deploy (`redeploy-jarvis` — restarts the orchestrator itself),
   adding or removing a module.
 
 New self-heal action kinds and new bounded scripts default to
 `requires_approval` unless explicitly classified otherwise — fail closed.
+`apply-website-file` is a deliberate, explicit exception to that default,
+not a precedent for classifying future scripts as `auto_fix` by default.
 
 ### Bounded script execution
 
@@ -106,14 +115,19 @@ script is a code change that goes through review.
 
 Scripts needing host-level privilege (`git pull` + rebuild) are now
 built, on a decision deliberately deferred until it needed making:
-`redeploy-jarvis` restarts the orchestrator itself, and `apply-website-file`
+`redeploy-jarvis` restarts the orchestrator itself (`requires_approval`
+— restarting the process handling chat itself stays gated) via
+`deploy-agent`, a narrowly-scoped sidecar that is the *only* service
+anywhere in this stack holding Docker-socket access, specifically kept
+off the orchestrator itself since that's root-equivalent host access
+reachable through anything that can reach chat. `apply-website-file`
 writes structural changes (templates, config, dependencies) to the
-website repo — both `requires_approval`, both executed via `deploy-agent`,
-a narrowly-scoped sidecar that is the *only* service anywhere in this
-stack holding Docker-socket access, specifically kept off the
-orchestrator itself since that's root-equivalent host access reachable
-through anything that can reach chat. See docs/architecture.md's
-"Website structural changes and self-deploy" section for the full design.
+website repo — `auto_fix`, per explicit user decision (see "Self-heal
+trust tiers" above); it doesn't need `deploy-agent` at all, since it only
+ever writes to the GitHub content repo via the same Contents API path
+`website.updateSection`/`updateStyle` already use, then pokes
+`website-server`'s rebuild hook. See docs/architecture.md's "Website
+structural changes and self-deploy" section for the full design.
 
 ### Autonomous fix loop
 
@@ -140,9 +154,10 @@ available as a tool. A few things aren't ordinary capability calls:
 * **`run_script`** — always available, lets JARVIS propose running one of
   its own bounded maintenance scripts (`src/core/scriptRegistry.ts`) from
   the conversation. It goes through the same self-heal trust tiers as
-  everything else: `vacuum-analyze` runs immediately, `apply-migration` is
-  only ever queued for the human to approve (dashboard or Pushover) — chat
-  can propose a change, it can never approve its own change.
+  everything else: `vacuum-analyze` and `apply-website-file` run
+  immediately; `apply-migration` and `redeploy-jarvis` are only ever
+  queued for the human to approve (dashboard or Pushover) — chat can
+  propose a change, it can never approve its own change.
 * **File/image attachments** — the user can attach an image or PDF to a
   chat message; it's passed through to Claude as a real content block,
   not just described in text.
@@ -173,9 +188,16 @@ Bearer-token gated (`JARVIS_DASHBOARD_TOKEN`). See docs/architecture.md's
 ### Explicitly out of scope for v1
 
 * No mid-conversation live relation computation (batch/scheduled only).
-* No auto-apply for anything structural or credential-related, regardless
-  of confidence — self-deploy and structural website changes are real
-  now, but both stay `requires_approval`, never `auto_fix`.
+* No auto-apply for anything credential-related, regardless of
+  confidence — that stays `requires_approval` unconditionally.
+* No auto-apply for self-deploy (`redeploy-jarvis`) — restarting the
+  process handling chat itself stays `requires_approval`.
+* Structural *website* changes (`apply-website-file`) are the one
+  explicit exception to "structural defaults to approval" — see
+  "Self-heal trust tiers" above for why, and don't generalize from it:
+  a new script touching anything outside the website repo still defaults
+  to `requires_approval` unless a human explicitly says otherwise for
+  that specific script, the same way this one exception was decided.
 
 ## graphify
 

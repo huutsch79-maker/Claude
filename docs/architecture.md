@@ -478,37 +478,45 @@ handshake involved.
 `farm-website`'s content/CSS intents (`updateSection`, `addPage`,
 `replacePhoto`, `updateStyle`) publish instantly, on the reasoning that
 they can only ever break one page at worst and never touch credentials
-or schema (see "Website module" above). Two things sit outside that
-reasoning, and both go through the existing bounded-script /
-`ApprovalGate` / Pushover / dashboard-approve flow instead — the same
-mechanism `apply-migration` already uses, reused rather than duplicated:
+or schema (see "Website module" above). Two more consequential scripts
+sit outside that reasoning — one auto-applies anyway, by explicit user
+decision; the other stays gated:
 
 - **`apply-website-file`** (`src/core/scriptRegistry.ts`) — creates or
   overwrites any file in the website repo: `.astro` markup/logic,
   `astro.config.mjs`, `src/content.config.ts`, `admin/config.yml`,
-  `package.json`, a brand new component. `requires_approval` because a
-  bad file here can break the whole site's build, not just one page's
-  content. Refuses any path under `.github/` outright — writing there
-  would mean granting CI code-execution capability, a different and
-  larger risk than "the website might look wrong," not something a
-  human approving "update this file" would necessarily be weighing.
-  `website.updateStyle` stays a separate, narrower, instant-publish path
+  `package.json`, a brand new component. `auto_fix`: **the user
+  explicitly decided this should publish instantly**, the same as
+  content/CSS, after being told plainly that a bad file here can break
+  the whole site's build (not just one page) with no review step to
+  catch it — a real reversal of the general "structural change defaults
+  to `requires_approval`" rule (see CLAUDE.md's "Self-heal trust tiers"),
+  made deliberately rather than by default. It does not go through
+  `deploy-agent` at all — no Docker-socket access needed, since it only
+  ever writes to the GitHub content repo (same Contents API path
+  `website.updateSection`/`updateStyle` already use) and then pokes
+  `website-server`'s rebuild hook, same as those. Refuses any path under
+  `.github/` outright regardless of trust tier — writing there would
+  mean granting CI code-execution capability, a categorically different
+  and larger risk than "the website might look wrong," and that refusal
+  was never part of the approval-vs-instant tradeoff being decided.
+  `website.updateStyle` remains a separate, narrower, always-instant path
   specifically because it's mechanically confined to text inside a
-  `<style>...</style>` block (or a whole `.css` file) — it can change
-  colors, spacing, image cropping, but never markup, logic, or config,
-  which is what makes the no-approval-needed reasoning still hold for it
-  specifically, even though it's editing the same files
-  `apply-website-file` can also touch.
+  `<style>...</style>` block (or a whole `.css` file) — that scoping
+  argument stands on its own and didn't need the same explicit decision
+  `apply-website-file` needed to go instant.
 
 - **`redeploy-jarvis`** — pulls latest JARVIS code and rebuilds/restarts
-  the orchestrator itself. `requires_approval` for an obvious reason:
-  this restarts the very process handling the chat that requested it,
-  and a bad pull/build takes JARVIS offline with no way to fix itself —
-  recovering needs direct NUC access (SSH), the same as any other broken
-  deploy. This was flagged as an open, deliberately-undecided question
-  earlier in this doc ("host-level privilege... needs its own decision
-  on how much access to grant") — the decision made was: give it, but
-  only through a narrowly-scoped sidecar, never directly to orchestrator.
+  the orchestrator itself. Still `requires_approval`, and this was not
+  part of the same decision that moved `apply-website-file` to
+  `auto_fix`: this restarts the very process handling the chat that
+  requested it, and a bad pull/build takes JARVIS offline with no way to
+  fix itself — recovering needs direct NUC access (SSH), the same as any
+  other broken deploy. A broken website build degrades one thing (the
+  website); a broken self-deploy degrades JARVIS itself, including its
+  ability to ever propose or run another fix. That's a categorically
+  larger blast radius, which is why the same "let it go instant"
+  decision wasn't extended here without being asked separately.
 
 **`deploy-agent`** (`deploy-agent/`) is that sidecar, and the *only*
 service in `docker-compose.yml` with Docker-socket access anywhere in

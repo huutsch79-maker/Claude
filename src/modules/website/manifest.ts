@@ -62,11 +62,14 @@ export const websiteManifest = {
     'and args {"path": "<file path in the site repo>", "contentBase64": "<the full new file content, base64-encoded>"}. ' +
     'contentBase64 must be the file\'s ENTIRE new content, not a diff or a fragment — read the current content with ' +
     '"website.readFile" first when editing an existing file, apply your change to it, then base64-encode the whole ' +
-    "result. That always queues for human approval before it goes live (unlike everything above, which is instant) " +
-    "— a bad file there can break the whole site's build, not just one page, so tell the user it's pending approval " +
-    "rather than implying it's already live. Never try to approximate a structural change (a new page layout, a " +
-    'new component, a dependency bump) through "website.updateSection" or "website.updateStyle" — use ' +
-    '"apply-website-file" for all of it.',
+    "result. This publishes instantly too, same as everything above — there is no human review step before a " +
+    "structural change goes live, so get it right the first time. A bad file here can break the whole site's " +
+    "build, not just one page, so be conservative: read the current file first, never guess syntax or invent " +
+    "content you don't actually have, and if you're not confident the change is correct, say so and ask rather " +
+    'than publish a guess. Never try to approximate a structural change (a new page layout, a new component, a ' +
+    'dependency bump) through "website.updateSection" or "website.updateStyle" — use "apply-website-file" for ' +
+    "all of it. The one thing this can never touch is .github/ — that's a hardcoded refusal, not part of this " +
+    "capability's judgment call, since it can grant CI code execution.",
   tool_config: { provider: "github-contents-api", scopes: ["contents:write"] },
   model_override: null,
   credential_ref: "website-github",

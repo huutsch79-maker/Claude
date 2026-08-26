@@ -93,10 +93,11 @@ export const SCRIPTS: Readonly<Record<string, ScriptDefinition>> = {
     name: "apply-website-file",
     description:
       "Create or overwrite one file in the website content repo — for anything beyond page content or CSS " +
-      "(Astro templates/markup, astro.config.mjs, content.config.ts, admin/config.yml, package.json). Requires " +
-      "approval because a bad file here can break the whole site's build, unlike a content edit which can only " +
-      "ever go wrong on one page.",
-    trustTier: "requires_approval", // structural website change — same reasoning as apply-migration
+      "(Astro templates/markup, astro.config.mjs, content.config.ts, admin/config.yml, package.json). Publishes " +
+      "instantly, same as a content edit — the user explicitly chose speed over a review step here, accepting " +
+      "that a bad file can break the whole site's build (unlike a content edit, which can only ever go wrong on " +
+      "one page). The hardcoded .github/ refusal below is not part of that tradeoff and stays regardless.",
+    trustTier: "auto_fix", // per explicit user decision — see docs/architecture.md's "Website structural changes" section
     run: async (ctx) => {
       const filePath = ctx.args.path;
       const contentBase64 = ctx.args.contentBase64;
@@ -116,7 +117,7 @@ export const SCRIPTS: Readonly<Record<string, ScriptDefinition>> = {
 
       const ref = websiteRepoRef();
       const existing = await getFile(ref, filePath, token);
-      await putFile(ref, filePath, contentBase64, `website: apply ${filePath} (approved)`, existing?.sha, token);
+      await putFile(ref, filePath, contentBase64, `website: apply ${filePath} via JARVIS chat`, existing?.sha, token);
 
       let rebuildDetail = "rebuild not configured (JARVIS_WEBSITE_REBUILD_URL unset)";
       const rebuildUrl = process.env.JARVIS_WEBSITE_REBUILD_URL;

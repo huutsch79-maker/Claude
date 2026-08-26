@@ -24,8 +24,8 @@ describe("script registry", () => {
     expect(getScript("apply-migration")?.trustTier).toBe("requires_approval");
   });
 
-  it("apply-website-file is requires_approval (can break the whole site's build)", () => {
-    expect(getScript("apply-website-file")?.trustTier).toBe("requires_approval");
+  it("apply-website-file is auto_fix (explicit user decision — see docs/architecture.md)", () => {
+    expect(getScript("apply-website-file")?.trustTier).toBe("auto_fix");
   });
 
   it("redeploy-jarvis is requires_approval (restarts JARVIS itself)", () => {
