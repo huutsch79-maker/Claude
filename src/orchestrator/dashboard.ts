@@ -89,7 +89,15 @@ export function createDashboardServer(orchestrator: Orchestrator): Server {
     // never take down chat and the dashboard along with it.
     try {
       const ok = await jarvis.selfHeal.approveScript(req.params.id!);
-      res.status(ok ? 200 : 404).json({ ok });
+      // A 404 here almost always means this request predates the last
+      // orchestrator restart — ApprovalGate's pending map is in-memory
+      // only (see its docstring), so a restart silently orphans anything
+      // proposed before it. The fix is a fresh request, not retrying this
+      // one. Worth spelling out since the alternative is a bare "HTTP 404".
+      res.status(ok ? 200 : 404).json({
+        ok,
+        error: ok ? undefined : "no pending approval with that id — it likely predates the last orchestrator restart; ask for a fresh one",
+      });
     } catch (err) {
       res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
     }
@@ -98,7 +106,10 @@ export function createDashboardServer(orchestrator: Orchestrator): Server {
   app.post("/api/scripts/:id/reject", async (req, res) => {
     try {
       const ok = await jarvis.selfHeal.rejectScript(req.params.id!);
-      res.status(ok ? 200 : 404).json({ ok });
+      res.status(ok ? 200 : 404).json({
+        ok,
+        error: ok ? undefined : "no pending approval with that id — it likely predates the last orchestrator restart",
+      });
     } catch (err) {
       res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
     }

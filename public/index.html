@@ -370,8 +370,8 @@ async function renderSidebar() {
       el("div", { class: "item-sub", text: p.category }),
     ]));
     row.appendChild(el("div", { class: "btn-row" }, [
-      el("button", { class: "tiny", text: "Ack", onclick: async () => { await api(`/api/proposals/${p.id}/approve`, { method: "POST" }); renderSidebar(); } }),
-      el("button", { class: "tiny danger", text: "Dismiss", onclick: async () => { await api(`/api/proposals/${p.id}/reject`, { method: "POST" }); renderSidebar(); } }),
+      el("button", { class: "tiny", text: "Ack", onclick: async () => { try { await api(`/api/proposals/${p.id}/approve`, { method: "POST" }); renderSidebar(); } catch (e) { alert("Failed: " + e.message); } } }),
+      el("button", { class: "tiny danger", text: "Dismiss", onclick: async () => { try { await api(`/api/proposals/${p.id}/reject`, { method: "POST" }); renderSidebar(); } catch (e) { alert("Failed: " + e.message); } } }),
     ]));
     propSection.appendChild(row);
   }
@@ -415,8 +415,8 @@ async function renderSidebar() {
     const row = el("div", { class: "item-row" });
     row.appendChild(el("div", { class: "item-main" }, [el("div", { class: "item-title", text: r.scriptName }), el("div", { class: "item-sub", text: r.detail || "" })]));
     row.appendChild(el("div", { class: "btn-row" }, [
-      el("button", { class: "tiny", text: "Approve", onclick: async () => { await api(`/api/scripts/${r.id}/approve`, { method: "POST" }); renderSidebar(); } }),
-      el("button", { class: "tiny danger", text: "Reject", onclick: async () => { await api(`/api/scripts/${r.id}/reject`, { method: "POST" }); renderSidebar(); } }),
+      el("button", { class: "tiny", text: "Approve", onclick: async () => { try { await api(`/api/scripts/${r.id}/approve`, { method: "POST" }); renderSidebar(); } catch (e) { alert("Failed: " + e.message); } } }),
+      el("button", { class: "tiny danger", text: "Reject", onclick: async () => { try { await api(`/api/scripts/${r.id}/reject`, { method: "POST" }); renderSidebar(); } catch (e) { alert("Failed: " + e.message); } } }),
     ]));
     scriptSection.appendChild(row);
   }
@@ -457,7 +457,14 @@ async function renderSidebar() {
       right.appendChild(el("button", {
         class: "tiny",
         text: c.enabled ? "Disable" : "Enable",
-        onclick: async () => { await api(`/api/capabilities/${c.name}/enabled`, { method: "POST", body: JSON.stringify({ enabled: !c.enabled }) }); renderSidebar(); },
+        onclick: async () => {
+          try {
+            await api(`/api/capabilities/${c.name}/enabled`, { method: "POST", body: JSON.stringify({ enabled: !c.enabled }) });
+            renderSidebar();
+          } catch (e) {
+            alert("Failed: " + e.message);
+          }
+        },
       }));
       row.appendChild(right);
       capSection.appendChild(row);
