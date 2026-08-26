@@ -8,8 +8,9 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "npm run build:dashboard && tsc -p tsconfig.json",
+    "build": "npm run build:dashboard && npm run build:orchestrator",
     "build:dashboard": "npm --prefix dashboard install && npm --prefix dashboard run build",
+    "build:orchestrator": "tsc -p tsconfig.json",
     "start": "node dist/src/orchestrator/index.js",
     "dev": "tsx src/orchestrator/index.ts",
     "dev:dashboard": "npm --prefix dashboard run dev",

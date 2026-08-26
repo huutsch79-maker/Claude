@@ -25,6 +25,10 @@ COPY scripts ./scripts
 COPY db ./db
 COPY --from=dashboard-build /public ./public
 
-RUN npm run build
+# Not `npm run build` — that also runs build:dashboard, which needs
+# dashboard/'s source (never copied into this stage on purpose; its
+# output already landed above via COPY --from). Only the orchestrator's
+# own TypeScript needs compiling here.
+RUN npm run build:orchestrator
 
 CMD ["node", "dist/src/orchestrator/index.js"]
