@@ -1,4 +1,22 @@
 {
+  "extraKnownMarketplaces": {
+    "thedotmack": {
+      "source": {
+        "source": "github",
+        "repo": "thedotmack/claude-mem"
+      }
+    },
+    "claude-plugins-official": {
+      "source": {
+        "source": "github",
+        "repo": "anthropics/claude-plugins-official"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "claude-mem@thedotmack": true,
+    "claude-code-setup@claude-plugins-official": true
+  },
   "hooks": {
     "PreToolUse": [
       {
