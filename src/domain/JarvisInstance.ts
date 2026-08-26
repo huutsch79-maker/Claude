@@ -57,14 +57,14 @@ export class JarvisInstance {
     this.memory = new MemoryStore(this.pool, opts.embeddingProvider ?? new NotConfiguredEmbeddingProvider());
     this.relations = new RelationsStore(this.pool);
     this.registry = new CapabilityRegistry(this.pool);
-    this.security = new SecurityAccess(this.credentials, this.registry);
+    this.oauthCredentials = new OAuthCredentialStore(this.pool, process.env.JARVIS_DASHBOARD_PUBLIC_URL ?? "");
+    this.security = new SecurityAccess(this.credentials, this.registry, this.oauthCredentials);
     this.ops = new CoreOpsStore(this.pool);
     const githubReporter = createGithubIssueReporter(
       this.credentials.get("github-issues")?.value ?? null,
       process.env.JARVIS_GITHUB_REPO ?? null,
     );
     this.reviewer = new Reviewer(this.pool, this.registry, this.memory, this.security, this.ops, githubReporter);
-    this.oauthCredentials = new OAuthCredentialStore(this.pool, process.env.JARVIS_DASHBOARD_PUBLIC_URL ?? "");
 
     const notifier = new PushoverApprovalNotifier();
     const approvalGate = new ApprovalGate(notifier);

@@ -215,13 +215,89 @@ describe("dashboard server", () => {
       workUnread: { status: string };
       azureCost: { status: string };
       needsAttention: { status: string };
+      credentialHealth: { status: string };
+      scriptRunHistory: { status: string };
+      usageWaste: { status: string };
     };
     expect(body.personalUnread.status).toBe("error");
     expect(body.workUnread.status).toBe("error");
     expect(body.azureCost.status).toBe("error");
     expect(body.needsAttention.status).toBe("error");
+    expect(body.credentialHealth.status).toBe("error");
+    expect(body.scriptRunHistory.status).toBe("error");
+    expect(body.usageWaste.status).toBe("error");
 
     const health = await fetch(`${baseUrl}/api/health`, { headers: { authorization: `Bearer ${TOKEN}` } });
     expect(health.status).toBe(200);
+  });
+
+  it("computes usage-waste (CSV parsing), script-run-history, and credential-health correctly", async () => {
+    // Deliberately includes a quoted display name containing a comma
+    // ("Smith, Alice") to prove the CSV parser doesn't just split(",") —
+    // a naive split would misalign every column after it.
+    const usageCsv =
+      "User Principal Name,Display Name,Is Deleted,Last Activity Date,Item Count\n" +
+      'a@nzb.co.nz,"Smith, Alice",False,2026-08-01,120\n' +
+      "b@nzb.co.nz,Bob Jones,False,,45\n" +
+      "c@nzb.co.nz,Deleted Guy,True,,3\n";
+
+    const capRow = (name: string, credentialRef: string | null) => ({
+      id: name,
+      name,
+      category: "work",
+      enabled: true,
+      priority: 100,
+      schemaDef: {},
+      systemPrompt: null,
+      toolConfig: {},
+      modelOverride: null,
+      credentialRef,
+      modulePath: "x",
+    });
+
+    orchestrator.jarvis.registry.list = (async () => [
+      capRow("nzb-m365-usage-report", null),
+      capRow("cap-a", "ref-a"),
+      capRow("cap-b", "ref-b"),
+    ]) as typeof orchestrator.jarvis.registry.list;
+
+    orchestrator.jarvis.registry.loadModule = (async () => ({
+      canHandle: () => true,
+      handle: async () => ({ data: usageCsv }),
+    })) as typeof orchestrator.jarvis.registry.loadModule;
+
+    orchestrator.jarvis.ops.listScriptRuns = (async () => [
+      { id: "r1", scriptName: "vacuum-analyze", args: {}, trustTier: "auto_fix", status: "applied", detail: null, startedAt: "", finishedAt: null },
+      { id: "r2", scriptName: "apply-migration", args: {}, trustTier: "requires_approval", status: "failed", detail: null, startedAt: "", finishedAt: null },
+      { id: "r3", scriptName: "redeploy-jarvis", args: {}, trustTier: "requires_approval", status: "pending_approval", detail: null, startedAt: "", finishedAt: null },
+    ]) as typeof orchestrator.jarvis.ops.listScriptRuns;
+
+    orchestrator.jarvis.credentials.auditStatuses = ((refs: string[]) =>
+      refs.map((r) =>
+        r === "ref-a"
+          ? { credentialRef: r, status: "expiring_soon" as const, expiresAt: new Date(Date.now() + 3 * 86_400_000).toISOString() }
+          : { credentialRef: r, status: "valid" as const, expiresAt: null },
+      )) as typeof orchestrator.jarvis.credentials.auditStatuses;
+
+    orchestrator.jarvis.oauthCredentials.listConnectedRefs = (async () => new Set<string>()) as typeof orchestrator.jarvis.oauthCredentials.listConnectedRefs;
+
+    const res = await fetch(`${baseUrl}/api/insights`, { headers: { authorization: `Bearer ${TOKEN}` } });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      usageWaste: { status: string; data?: { inactiveMailboxes: number; totalMailboxes: number } };
+      scriptRunHistory: { status: string; data?: { applied: number; failed: number; pending: number; rejected: number } };
+      credentialHealth: { status: string; data?: { totalTracked: number; atRisk: Array<{ credentialRef: string; status: string; daysRemaining: number | null }> } };
+    };
+
+    // 2 non-deleted mailboxes; only "b" has a blank Last Activity Date.
+    expect(body.usageWaste).toEqual({ status: "ok", data: { inactiveMailboxes: 1, totalMailboxes: 2 } });
+    expect(body.scriptRunHistory).toEqual({ status: "ok", data: { applied: 1, failed: 1, pending: 1, rejected: 0 } });
+    expect(body.credentialHealth.status).toBe("ok");
+    expect(body.credentialHealth.data?.totalTracked).toBe(2);
+    const atRisk = body.credentialHealth.data?.atRisk ?? [];
+    expect(atRisk).toHaveLength(1);
+    expect(atRisk[0]).toMatchObject({ credentialRef: "ref-a", status: "expiring_soon" });
+    expect(atRisk[0]?.daysRemaining).toBeGreaterThanOrEqual(2);
+    expect(atRisk[0]?.daysRemaining).toBeLessThanOrEqual(3);
   });
 });

@@ -547,15 +547,42 @@ later chat turn) wants to check afterward.
 
 ## Ops dashboard
 
-Same single-page view as before — a sidebar (health, pending proposals,
-scripts + run history, capabilities grouped by their freeform category)
-and a chat panel as the main surface, since talking to JARVIS is the
-primary way of using it now, not two separate work/personal columns.
-Bearer-token gated (`JARVIS_DASHBOARD_TOKEN`); binds `0.0.0.0` by default
-since `127.0.0.1` inside a container is unreachable via Docker's port
-mapping even from the host's own loopback. `src/orchestrator/dashboard.ts`
-still just serves `public/` as static files (`express.static`) —
-unchanged.
+Single-page view: a sidebar plus a chat panel as the main surface, since
+talking to JARVIS is the primary way of using it, not two separate
+work/personal columns. Bearer-token gated (`JARVIS_DASHBOARD_TOKEN`);
+binds `0.0.0.0` by default since `127.0.0.1` inside a container is
+unreachable via Docker's port mapping even from the host's own loopback.
+`src/orchestrator/dashboard.ts` still just serves `public/` as static
+files (`express.static`) — unchanged.
+
+**The sidebar is built around real data, not a fixed list of sections.**
+`GET /api/insights` computes seven small tiles directly against the
+domain layer (no LLM call — these are exact values with one right
+answer): unread counts for both mail accounts, an Azure MTD-vs-last-month
+cost comparison, M365 mailbox inactivity (parsed from
+`nzb-m365-usage-report`'s CSV response), recent script-run outcomes, a
+"needs attention" count, and credential health. Each source is fetched
+independently and degrades to its own `not_connected`/`error` tile — one
+broken source never breaks the panel. Pending proposals and pending
+script runs (things like `redeploy-jarvis`) are merged into one "Needs
+Attention" section that only renders when non-empty, instead of two
+permanently-visible sections; the full Capabilities/Scripts catalog sits
+behind a collapsed "Advanced" disclosure. The goal: static text only for
+things that are actually static, real numbers for everything else.
+
+**Fixed alongside the credential-health tile: `SecurityAccess.auditCredentials()`
+always reported delegated OAuth credentials (`hotmail-oauth`,
+`nzb-m365-oauth`) as invalid.** It only ever checked the static
+`JARVIS_CRED_*` env-var store, but those two refs live in
+`jarvis.oauth_credentials` (see `oauthCredentialStore.ts`) and never had
+a matching env var — so a properly connected mailbox always audited as
+"missing." `SecurityAccess` now also takes `OAuthCredentialStore` and
+checks `listConnectedRefs()` first: a connected OAuth ref reports valid
+(it self-refreshes, so there's no fixed expiry worth auditing), and an
+unconnected one still falls through to the static path and correctly
+shows as missing. `JarvisInstance` had to be reordered slightly —
+`oauthCredentials` now constructs before `security`, which depends on
+it.
 
 **The frontend is a real project now, not a hand-written HTML file.**
 `dashboard/` (its own `package.json`, separate from the orchestrator's,

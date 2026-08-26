@@ -2,35 +2,11 @@ import { api } from "../api";
 import { useSidebarData } from "../useSidebarData";
 import { useInsights } from "../useInsights";
 import { useToast } from "../toast";
-import { Insights } from "./Insights";
+import { Insights, CredentialHealthSection } from "./Insights";
 import type { Capability, ScriptDef } from "../types";
 
 function Badge({ text, cls }: { text: string; cls: string }) {
   return <span class={`badge ${cls}`}>{text}</span>;
-}
-
-/** Collapsed to one line when everything's fine; only lists credentials when one of them isn't valid — the "always-on wall of text" this replaced showed every credential every time. */
-function HealthSection({ health }: { health: ReturnType<typeof useSidebarData>["health"] }) {
-  if (!health) return null;
-  const problems = health.credentialStatus.filter((c) => c.status !== "valid");
-  if (problems.length === 0) {
-    return (
-      <div class="section health-ok">
-        <span class="status-dot ok" /> all credentials valid
-      </div>
-    );
-  }
-  return (
-    <div class="section">
-      <h2>Health</h2>
-      {problems.map((c) => (
-        <div class="item-row" key={c.credentialRef}>
-          <div class="item-title">{c.credentialRef}</div>
-          <Badge text={c.status} cls={c.status === "expiring_soon" ? "expiring_soon" : "invalid"} />
-        </div>
-      ))}
-    </div>
-  );
 }
 
 type AttentionItem =
@@ -218,7 +194,7 @@ export function Sidebar({ open, onOpenSettings }: Props) {
       </div>
       <Insights data={insights} />
       <NeedsAttentionSection data={data} refresh={data.refresh} />
-      <HealthSection health={data.health} />
+      {insights && <CredentialHealthSection tile={insights.credentialHealth} />}
       <AdvancedSection data={data} refresh={data.refresh} />
     </aside>
   );

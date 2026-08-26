@@ -169,7 +169,7 @@ body {
   border-radius: var(--radius-md);
   padding: 10px 12px;
 }
-.insight-tile:last-child {
+.insight-tile-wide {
   grid-column: 1 / -1;
 }
 .insight-tile-title {
@@ -211,14 +211,31 @@ body {
   font-size: 11px;
 }
 .insight-cost-label {
-  width: 46px;
+  width: 58px;
   flex-shrink: 0;
   color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .insight-cost-track {
   height: 10px;
 }
-.insight-cost-fill-muted {
+/* compound selectors so these win the cascade over .chart-bar-fill's own
+   background, which is declared later in this file at equal specificity */
+.chart-bar-fill.insight-cost-fill-muted {
+  background: var(--muted);
+}
+.chart-bar-fill.insight-bar-good {
+  background: var(--ok);
+}
+.chart-bar-fill.insight-bar-critical {
+  background: var(--danger);
+}
+.chart-bar-fill.insight-bar-warning {
+  background: var(--warn);
+}
+.chart-bar-fill.insight-bar-muted {
   background: var(--muted);
 }
 .insight-cost-value {

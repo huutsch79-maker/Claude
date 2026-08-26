@@ -252,13 +252,16 @@ export function createDashboardServer(orchestrator: Orchestrator): Server {
   // others: a missing OAuth connection or one flaky API must degrade
   // one tile, not the whole panel.
   app.get("/api/insights", async (_req, res) => {
-    const [personalUnread, workUnread, azureCost, needsAttention] = await Promise.all([
+    const [personalUnread, workUnread, azureCost, needsAttention, credentialHealth, scriptRunHistory, usageWaste] = await Promise.all([
       fetchUnreadCount(jarvis, "hotmail-outlook", "email.unreadCount"),
       fetchUnreadCount(jarvis, "nzb-m365-connector", "m365.mail.unreadCount"),
       fetchAzureCost(jarvis),
       fetchNeedsAttention(jarvis),
+      fetchCredentialHealth(jarvis),
+      fetchScriptRunHistory(jarvis),
+      fetchUsageWaste(jarvis),
     ]);
-    res.json({ personalUnread, workUnread, azureCost, needsAttention });
+    res.json({ personalUnread, workUnread, azureCost, needsAttention, credentialHealth, scriptRunHistory, usageWaste });
   });
 
   return createServer(app);
@@ -345,6 +348,127 @@ async function fetchNeedsAttention(jarvis: Orchestrator["jarvis"]): Promise<Insi
     const pendingScripts = runs.filter((r) => r.status === "pending_approval").length;
     return { status: "ok", data: { pendingProposals: proposals.length, pendingScripts } };
   } catch (err) {
+    return { status: "error", message: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * Only ever flags credentials the static JARVIS_CRED_* audit actually
+ * covers (see SecurityAccess.auditCredentials) — an OAuth-managed ref
+ * that's connected is already reported "valid" there with no expiry to
+ * chase, so it never shows up here; one that was never connected shows up
+ * as "invalid" the same as a missing static credential would.
+ */
+async function fetchCredentialHealth(
+  jarvis: Orchestrator["jarvis"],
+): Promise<InsightTile<{ totalTracked: number; atRisk: Array<{ credentialRef: string; status: string; daysRemaining: number | null }> }>> {
+  try {
+    const { statuses } = await jarvis.security.auditCredentials();
+    const now = Date.now();
+    const atRisk = statuses
+      .filter((s) => s.status !== "valid")
+      .map((s) => ({
+        credentialRef: s.credentialRef,
+        status: s.status,
+        daysRemaining: s.expiresAt ? Math.floor((Date.parse(s.expiresAt) - now) / 86_400_000) : null,
+      }));
+    return { status: "ok", data: { totalTracked: statuses.length, atRisk } };
+  } catch (err) {
+    return { status: "error", message: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** Counts, not the full list — the sidebar just needs "how healthy has self-heal been lately," not a log viewer. */
+async function fetchScriptRunHistory(
+  jarvis: Orchestrator["jarvis"],
+): Promise<InsightTile<{ applied: number; failed: number; pending: number; rejected: number }>> {
+  try {
+    const runs = await jarvis.ops.listScriptRuns(20);
+    const counts = { applied: 0, failed: 0, pending: 0, rejected: 0 };
+    for (const run of runs) {
+      if (run.status === "applied") counts.applied++;
+      else if (run.status === "failed") counts.failed++;
+      else if (run.status === "pending_approval") counts.pending++;
+      else if (run.status === "rejected") counts.rejected++;
+    }
+    return { status: "ok", data: counts };
+  } catch (err) {
+    return { status: "error", message: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * Minimal RFC4180-ish CSV parser — Graph's usage-report CSVs quote any
+ * field that itself contains a comma (display names, mainly), so a naive
+ * split(",") would misalign columns on exactly the rows worth reading.
+ */
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = "";
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (text[i + 1] === '"') {
+          field += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        field += c;
+      }
+    } else if (c === '"') {
+      inQuotes = true;
+    } else if (c === ",") {
+      row.push(field);
+      field = "";
+    } else if (c === "\n" || c === "\r") {
+      if (c === "\r" && text[i + 1] === "\n") i++;
+      row.push(field);
+      field = "";
+      if (row.some((cell) => cell !== "")) rows.push(row);
+      row = [];
+    } else {
+      field += c;
+    }
+  }
+  if (field !== "" || row.length > 0) {
+    row.push(field);
+    if (row.some((cell) => cell !== "")) rows.push(row);
+  }
+  return rows;
+}
+
+/**
+ * "Inactive" here means Graph's own getMailboxUsageDetail already reported
+ * no activity in the requested period (D30) — a blank Last Activity Date
+ * for a non-deleted mailbox, not something computed from timestamps here.
+ * Flags cleanup candidates only; never touches licenses or mailboxes
+ * itself (see nzb-usage-report/manifest.ts).
+ */
+async function fetchUsageWaste(jarvis: Orchestrator["jarvis"]): Promise<InsightTile<{ inactiveMailboxes: number; totalMailboxes: number }>> {
+  try {
+    const raw = (await callCapabilityDirect(jarvis, "nzb-m365-usage-report", "m365.usage.report", {
+      report: "getMailboxUsageDetail",
+      period: "D30",
+    })) as { data: string };
+    const rows = parseCsv(raw.data);
+    const header = rows[0] ?? [];
+    const deletedIdx = header.indexOf("Is Deleted");
+    const lastActivityIdx = header.indexOf("Last Activity Date");
+    let total = 0;
+    let inactive = 0;
+    for (const row of rows.slice(1)) {
+      if (deletedIdx >= 0 && row[deletedIdx]?.toLowerCase() === "true") continue;
+      total++;
+      if (lastActivityIdx < 0 || !row[lastActivityIdx]) inactive++;
+    }
+    return { status: "ok", data: { inactiveMailboxes: inactive, totalMailboxes: total } };
+  } catch (err) {
+    if (isNotConnected(err)) return { status: "not_connected" };
     return { status: "error", message: err instanceof Error ? err.message : String(err) };
   }
 }

@@ -45,6 +45,9 @@ export interface Insights {
   workUnread: InsightTile<{ unreadCount: number; totalCount: number }>;
   azureCost: InsightTile<{ monthToDate: number; lastMonth: number; currency: string }>;
   needsAttention: InsightTile<{ pendingProposals: number; pendingScripts: number }>;
+  credentialHealth: InsightTile<{ totalTracked: number; atRisk: Array<{ credentialRef: string; status: string; daysRemaining: number | null }> }>;
+  scriptRunHistory: InsightTile<{ applied: number; failed: number; pending: number; rejected: number }>;
+  usageWaste: InsightTile<{ inactiveMailboxes: number; totalMailboxes: number }>;
 }
 
 export interface Attachment {

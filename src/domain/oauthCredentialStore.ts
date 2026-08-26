@@ -79,6 +79,22 @@ export class OAuthCredentialStore {
   }
 
   /**
+   * All refs with a stored token, in one query — used by SecurityAccess to
+   * tell OAuth-managed credentials (self-refreshing, no fixed expiry worth
+   * auditing) apart from the static JARVIS_CRED_* ones its own expiry audit
+   * actually applies to. Same cheap-read, fail-soft-to-empty contract as
+   * isConnected: never throws, never triggers a refresh.
+   */
+  async listConnectedRefs(): Promise<Set<string>> {
+    try {
+      const result = await this.pool.query(`select credential_ref from jarvis.oauth_credentials`);
+      return new Set(result.rows.map((r) => r.credential_ref as string));
+    } catch {
+      return new Set();
+    }
+  }
+
+  /**
    * Issues a one-time, short-lived state token and returns the URL to send
    * the browser to. The state is what makes the later callback trustworthy
    * — Microsoft's redirect back has no bearer token on it, so the state
