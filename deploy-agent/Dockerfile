@@ -7,6 +7,13 @@ FROM docker:26-cli
 RUN apk add --no-cache nodejs git docker-cli-compose
 
 WORKDIR /app
+# package.json has no dependencies (server.js only imports node: builtins) —
+# it's copied in purely for its "type": "module" field, which is what lets
+# Node parse server.js's `import` syntax at all. Without it in the image,
+# Node defaults to CommonJS and refuses to parse `import` with a
+# SyntaxError — this was silently missing before and only surfaced once a
+# separate ENTRYPOINT bug (see below) stopped masking it.
+COPY package.json ./
 COPY server.js ./
 
 EXPOSE 8082
