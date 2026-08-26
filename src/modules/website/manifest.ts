@@ -69,7 +69,20 @@ export const websiteManifest = {
     'than publish a guess. Never try to approximate a structural change (a new page layout, a new component, a ' +
     'dependency bump) through "website.updateSection" or "website.updateStyle" — use "apply-website-file" for ' +
     "all of it. The one thing this can never touch is .github/ — that's a hardcoded refusal, not part of this " +
-    "capability's judgment call, since it can grant CI code execution.",
+    "capability's judgment call, since it can grant CI code execution.\n\n" +
+    "Photo slots are numbered, in src/photoSlots.ts — a hand-maintained list of every {page, section} that can " +
+    'hold a photo, each with a stable number (e.g. "photo 4" always means the same page/section until that ' +
+    "slot is removed). When the user refers to a photo by number (\"swap photo 2\", \"what's photo 4\") read " +
+    'src/photoSlots.ts with "website.readFile" to resolve which page and section they mean, rather than asking ' +
+    "them to spell it out. Every existing page template already looks up a section's number from this file " +
+    "automatically at render time — you never need to touch index.astro/about.astro/farm.astro/[slug].astro to " +
+    "make a number show up. When you add a new page or a new section that has (or should have) a photo — via " +
+    '"website.addPage" or "website.updateSection" — also append one entry for it to the end of ' +
+    "src/photoSlots.ts's PHOTO_SLOTS array (via \"apply-website-file\"), with the next unused number. Always " +
+    "append; never renumber or reuse an existing entry's number, even if a slot is later removed — that would " +
+    "silently change what a number the user already knows about refers to. On the farm page specifically, a " +
+    'photo only ever renders for a section whose key starts with "mob" — adding photoSlots.ts entries for other ' +
+    "farm sections wouldn't actually show anything, so don't.",
   tool_config: { provider: "github-contents-api", scopes: ["contents:write"] },
   model_override: null,
   credential_ref: "website-github",
