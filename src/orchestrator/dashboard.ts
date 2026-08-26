@@ -245,7 +245,108 @@ export function createDashboardServer(orchestrator: Orchestrator): Server {
     res.json(jarvis.chat.pollTurn(req.params.sessionId!));
   });
 
+  // Structured stats for the dashboard's insight tiles (unread email
+  // counts, Azure spend, what's waiting on the user) — deterministic,
+  // no LLM call, unlike asking JARVIS the same thing in chat. Each
+  // source is fetched independently and never allowed to fail the
+  // others: a missing OAuth connection or one flaky API must degrade
+  // one tile, not the whole panel.
+  app.get("/api/insights", async (_req, res) => {
+    const [personalUnread, workUnread, azureCost, needsAttention] = await Promise.all([
+      fetchUnreadCount(jarvis, "hotmail-outlook", "email.unreadCount"),
+      fetchUnreadCount(jarvis, "nzb-m365-connector", "m365.mail.unreadCount"),
+      fetchAzureCost(jarvis),
+      fetchNeedsAttention(jarvis),
+    ]);
+    res.json({ personalUnread, workUnread, azureCost, needsAttention });
+  });
+
   return createServer(app);
+}
+
+type InsightTile<T> = { status: "ok"; data: T } | { status: "not_connected" } | { status: "error"; message: string };
+
+/**
+ * Calls one capability's handle() directly — the same credential
+ * resolution + module load ChatService's tool loop uses, but without
+ * going through Claude at all, since these are exact, structured values
+ * with one right answer (an unread count, a dollar figure), not
+ * something worth an LLM round-trip to fetch on every dashboard load.
+ */
+async function callCapabilityDirect(jarvis: Orchestrator["jarvis"], name: string, intent: string, payload: unknown): Promise<unknown> {
+  const rows = await jarvis.registry.list({ enabledOnly: true });
+  const row = rows.find((r) => r.name === name);
+  if (!row) throw Object.assign(new Error(`capability "${name}" is disabled or not registered`), { code: "NOT_CONNECTED" });
+
+  const credential = row.credentialRef
+    ? ((await jarvis.oauthCredentials.getValidToken(row.credentialRef)) ?? jarvis.credentials.get(row.credentialRef))
+    : null;
+  if (row.credentialRef && !credential) {
+    throw Object.assign(new Error(`"${name}" has no valid credential — not connected yet`), { code: "NOT_CONNECTED" });
+  }
+
+  const module = await jarvis.registry.loadModule(row);
+  return module.handle({ intent, payload }, { credential, attachments: [] });
+}
+
+function isNotConnected(err: unknown): boolean {
+  return err instanceof Error && (err as Error & { code?: string }).code === "NOT_CONNECTED";
+}
+
+async function fetchUnreadCount(jarvis: Orchestrator["jarvis"], capability: string, intent: string): Promise<InsightTile<{ unreadCount: number; totalCount: number }>> {
+  try {
+    const result = (await callCapabilityDirect(jarvis, capability, intent, {})) as { unreadCount: number; totalCount: number };
+    return { status: "ok", data: result };
+  } catch (err) {
+    if (isNotConnected(err)) return { status: "not_connected" };
+    return { status: "error", message: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * The Cost Management API groups by resource group (see
+ * nzb-azure-insights/index.ts), so this is a total across whatever rows
+ * came back, column position resolved by name rather than assumed —
+ * Cost Management doesn't guarantee column order.
+ */
+function sumAzureCostRows(raw: unknown): { total: number; currency: string } {
+  const body = raw as { properties?: { columns?: Array<{ name: string }>; rows?: unknown[][] } };
+  const columns = body.properties?.columns ?? [];
+  const rows = body.properties?.rows ?? [];
+  const costIdx = columns.findIndex((c) => c.name === "Cost");
+  const currencyIdx = columns.findIndex((c) => c.name === "Currency");
+  let total = 0;
+  for (const row of rows) {
+    const value = costIdx >= 0 ? Number(row[costIdx]) : 0;
+    if (Number.isFinite(value)) total += value;
+  }
+  const currency = currencyIdx >= 0 && rows[0] ? String(rows[0][currencyIdx]) : "";
+  return { total, currency };
+}
+
+async function fetchAzureCost(jarvis: Orchestrator["jarvis"]): Promise<InsightTile<{ monthToDate: number; lastMonth: number; currency: string }>> {
+  try {
+    const [mtdRaw, lastMonthRaw] = await Promise.all([
+      callCapabilityDirect(jarvis, "nzb-azure-cost-insights", "azure.cost.summary", { timeframe: "MonthToDate" }),
+      callCapabilityDirect(jarvis, "nzb-azure-cost-insights", "azure.cost.summary", { timeframe: "TheLastMonth" }),
+    ]);
+    const mtd = sumAzureCostRows(mtdRaw);
+    const lastMonth = sumAzureCostRows(lastMonthRaw);
+    return { status: "ok", data: { monthToDate: mtd.total, lastMonth: lastMonth.total, currency: mtd.currency || lastMonth.currency } };
+  } catch (err) {
+    if (isNotConnected(err)) return { status: "not_connected" };
+    return { status: "error", message: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+async function fetchNeedsAttention(jarvis: Orchestrator["jarvis"]): Promise<InsightTile<{ pendingProposals: number; pendingScripts: number }>> {
+  try {
+    const [proposals, runs] = await Promise.all([jarvis.ops.listReviewerProposals("pending"), jarvis.ops.listScriptRuns()]);
+    const pendingScripts = runs.filter((r) => r.status === "pending_approval").length;
+    return { status: "ok", data: { pendingProposals: proposals.length, pendingScripts } };
+  } catch (err) {
+    return { status: "error", message: err instanceof Error ? err.message : String(err) };
+  }
 }
 
 function parseAttachments(body: unknown): ChatAttachment[] | "invalid" {

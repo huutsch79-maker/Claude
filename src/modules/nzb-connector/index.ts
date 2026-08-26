@@ -2,7 +2,7 @@ import type { CapabilityContext, CapabilityModule } from "../../domain/capabilit
 import { describeFailedResponse } from "../../domain/httpError.js";
 
 export interface NzbRequest {
-  intent: "m365.mail.search" | "dynamics.record.lookup";
+  intent: "m365.mail.search" | "m365.mail.unreadCount" | "dynamics.record.lookup";
   payload: Record<string, unknown>;
 }
 
@@ -14,7 +14,7 @@ export interface NzbRequest {
 const nzbConnectorModule: CapabilityModule = {
   canHandle(request: unknown): boolean {
     const req = request as Partial<NzbRequest>;
-    return req?.intent === "m365.mail.search" || req?.intent === "dynamics.record.lookup";
+    return req?.intent === "m365.mail.search" || req?.intent === "m365.mail.unreadCount" || req?.intent === "dynamics.record.lookup";
   },
 
   async handle(request: unknown, ctx: CapabilityContext): Promise<unknown> {
@@ -36,6 +36,16 @@ const nzbConnectorModule: CapabilityModule = {
       return response.json();
     }
 
+    if (req.intent === "m365.mail.unreadCount") {
+      const response = await fetch(
+        `https://graph.microsoft.com/v1.0/me/mailFolders/inbox?$select=unreadItemCount,totalItemCount`,
+        { headers: { authorization: `Bearer ${ctx.credential.value}` } },
+      );
+      if (!response.ok) throw new Error(`nzb-m365-connector: Graph mailFolders lookup failed (${await describeFailedResponse(response)})`);
+      const body = (await response.json()) as { unreadItemCount: number; totalItemCount: number };
+      return { unreadCount: body.unreadItemCount, totalCount: body.totalItemCount };
+    }
+
     if (req.intent === "dynamics.record.lookup") {
       const dynamicsBase = process.env.JARVIS_NZB_DYNAMICS_BASE_URL ?? "https://api.businesscentral.dynamics.com/v2.0";
       const recordId = String(req.payload.id ?? "");
@@ -46,7 +56,9 @@ const nzbConnectorModule: CapabilityModule = {
       return response.json();
     }
 
-    throw new Error(`nzb-m365-connector: unsupported intent "${req.intent}" — must be "m365.mail.search" or "dynamics.record.lookup"`);
+    throw new Error(
+      `nzb-m365-connector: unsupported intent "${req.intent}" — must be "m365.mail.search", "m365.mail.unreadCount", or "dynamics.record.lookup"`,
+    );
   },
 };
 

@@ -13,8 +13,8 @@ export const hotmailManifest = {
   priority: 100,
   schema_def: {
     request: {
-      intent: "'email.search' | 'email.send'",
-      payload: "email.search: { query?: string }. email.send: { toRecipients: [...], subject: string, body: {...} } — Graph sendMail message shape",
+      intent: "'email.search' | 'email.send' | 'email.unreadCount'",
+      payload: "email.search: { query?: string }. email.send: { toRecipients: [...], subject: string, body: {...} } — Graph sendMail message shape. email.unreadCount: {}",
     },
   },
   system_prompt:
@@ -22,7 +22,9 @@ export const hotmailManifest = {
     'intent exactly "email.search" and payload {"query": "<optional search text>"} to search/list messages, or ' +
     'intent exactly "email.send" and payload shaped as a Graph message object (e.g. {"toRecipients": ' +
     '[{"emailAddress": {"address": "..."}}], "subject": "...", "body": {"contentType": "Text", "content": "..."}}) ' +
-    "to send one. Any other intent value is rejected, not treated as a send — never guess a close-enough intent name.",
+    'to send one, or intent exactly "email.unreadCount" and payload {} to get the inbox\'s unread/total counts ' +
+    "(also what powers the dashboard's unread-email stat tile — this is the cheap folder-count lookup, not a " +
+    "search). Any other intent value is rejected, not treated as a send — never guess a close-enough intent name.",
   tool_config: { provider: "microsoft-graph", scopes: ["Mail.Read", "Mail.Send"] },
   model_override: null,
   credential_ref: "hotmail-oauth",

@@ -197,4 +197,31 @@ describe("dashboard server", () => {
     const health = await fetch(`${baseUrl}/api/health`, { headers: { authorization: `Bearer ${TOKEN}` } });
     expect(health.status).toBe(200);
   });
+
+  it("requires auth for /api/insights", async () => {
+    const res = await fetch(`${baseUrl}/api/insights`);
+    expect(res.status).toBe(401);
+  });
+
+  it("insights degrades every source to an error tile instead of crashing when the DB is unreachable", async () => {
+    // No live Postgres in this test env (see beforeAll's comment) — every
+    // source this route touches (registry.list, ops.listReviewerProposals,
+    // ops.listScriptRuns) will reject. The route must turn that into
+    // per-tile {status:"error"} responses, not an unhandled rejection.
+    const res = await fetch(`${baseUrl}/api/insights`, { headers: { authorization: `Bearer ${TOKEN}` } });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      personalUnread: { status: string };
+      workUnread: { status: string };
+      azureCost: { status: string };
+      needsAttention: { status: string };
+    };
+    expect(body.personalUnread.status).toBe("error");
+    expect(body.workUnread.status).toBe("error");
+    expect(body.azureCost.status).toBe("error");
+    expect(body.needsAttention.status).toBe("error");
+
+    const health = await fetch(`${baseUrl}/api/health`, { headers: { authorization: `Bearer ${TOKEN}` } });
+    expect(health.status).toBe(200);
+  });
 });

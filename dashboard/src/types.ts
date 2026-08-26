@@ -38,6 +38,15 @@ export interface Capability {
   oauthConnected: boolean;
 }
 
+export type InsightTile<T> = { status: "ok"; data: T } | { status: "not_connected" } | { status: "error"; message: string };
+
+export interface Insights {
+  personalUnread: InsightTile<{ unreadCount: number; totalCount: number }>;
+  workUnread: InsightTile<{ unreadCount: number; totalCount: number }>;
+  azureCost: InsightTile<{ monthToDate: number; lastMonth: number; currency: string }>;
+  needsAttention: InsightTile<{ pendingProposals: number; pendingScripts: number }>;
+}
+
 export interface Attachment {
   mediaType: string;
   base64Data: string;

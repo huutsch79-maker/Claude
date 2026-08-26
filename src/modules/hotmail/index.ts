@@ -2,7 +2,7 @@ import type { CapabilityContext, CapabilityModule } from "../../domain/capabilit
 import { describeFailedResponse } from "../../domain/httpError.js";
 
 export interface EmailRequest {
-  intent: "email.search" | "email.send";
+  intent: "email.search" | "email.send" | "email.unreadCount";
   payload: Record<string, unknown>;
 }
 
@@ -22,7 +22,7 @@ export interface EmailRequest {
 const hotmailModule: CapabilityModule = {
   canHandle(request: unknown): boolean {
     const req = request as Partial<EmailRequest>;
-    return req?.intent === "email.search" || req?.intent === "email.send";
+    return req?.intent === "email.search" || req?.intent === "email.send" || req?.intent === "email.unreadCount";
   },
 
   async handle(request: unknown, ctx: CapabilityContext): Promise<unknown> {
@@ -45,6 +45,18 @@ const hotmailModule: CapabilityModule = {
       return response.json();
     }
 
+    if (req.intent === "email.unreadCount") {
+      // The inbox folder's own unreadItemCount, not a $search/$filter
+      // count — one cheap request, no ConsistencyLevel/$count ceremony,
+      // and it's exactly the number the mail app itself shows.
+      const response = await fetch(`${graphBase}/me/mailFolders/inbox?$select=unreadItemCount,totalItemCount`, {
+        headers: { authorization: `Bearer ${ctx.credential.value}` },
+      });
+      if (!response.ok) throw new Error(`hotmail-outlook: Graph mailFolders lookup failed (${await describeFailedResponse(response)})`);
+      const body = (await response.json()) as { unreadItemCount: number; totalItemCount: number };
+      return { unreadCount: body.unreadItemCount, totalCount: body.totalItemCount };
+    }
+
     if (req.intent === "email.send") {
       const response = await fetch(`${graphBase}/me/sendMail`, {
         method: "POST",
@@ -58,7 +70,7 @@ const hotmailModule: CapabilityModule = {
     // Fail closed: an unrecognized intent must never silently fall through
     // to sendMail — the most consequential of the two actions is exactly
     // the wrong default for "we don't know what this request means."
-    throw new Error(`hotmail-outlook: unsupported intent "${req.intent}" — must be "email.search" or "email.send"`);
+    throw new Error(`hotmail-outlook: unsupported intent "${req.intent}" — must be "email.search", "email.send", or "email.unreadCount"`);
   },
 };
 
