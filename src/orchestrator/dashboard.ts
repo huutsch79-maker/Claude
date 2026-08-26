@@ -252,16 +252,15 @@ export function createDashboardServer(orchestrator: Orchestrator): Server {
   // others: a missing OAuth connection or one flaky API must degrade
   // one tile, not the whole panel.
   app.get("/api/insights", async (_req, res) => {
-    const [personalUnread, workUnread, azureCost, needsAttention, credentialHealth, scriptRunHistory, usageWaste] = await Promise.all([
+    const [personalUnread, workUnread, azureCost, credentialHealth, scriptRunHistory, usageWaste] = await Promise.all([
       fetchUnreadCount(jarvis, "hotmail-outlook", "email.unreadCount"),
       fetchUnreadCount(jarvis, "nzb-m365-connector", "m365.mail.unreadCount"),
       fetchAzureCost(jarvis),
-      fetchNeedsAttention(jarvis),
       fetchCredentialHealth(jarvis),
       fetchScriptRunHistory(jarvis),
       fetchUsageWaste(jarvis),
     ]);
-    res.json({ personalUnread, workUnread, azureCost, needsAttention, credentialHealth, scriptRunHistory, usageWaste });
+    res.json({ personalUnread, workUnread, azureCost, credentialHealth, scriptRunHistory, usageWaste });
   });
 
   return createServer(app);
@@ -338,16 +337,6 @@ async function fetchAzureCost(jarvis: Orchestrator["jarvis"]): Promise<InsightTi
     return { status: "ok", data: { monthToDate: mtd.total, lastMonth: lastMonth.total, currency: mtd.currency || lastMonth.currency } };
   } catch (err) {
     if (isNotConnected(err)) return { status: "not_connected" };
-    return { status: "error", message: err instanceof Error ? err.message : String(err) };
-  }
-}
-
-async function fetchNeedsAttention(jarvis: Orchestrator["jarvis"]): Promise<InsightTile<{ pendingProposals: number; pendingScripts: number }>> {
-  try {
-    const [proposals, runs] = await Promise.all([jarvis.ops.listReviewerProposals("pending"), jarvis.ops.listScriptRuns()]);
-    const pendingScripts = runs.filter((r) => r.status === "pending_approval").length;
-    return { status: "ok", data: { pendingProposals: proposals.length, pendingScripts } };
-  } catch (err) {
     return { status: "error", message: err instanceof Error ? err.message : String(err) };
   }
 }

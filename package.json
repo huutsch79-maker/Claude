@@ -16,6 +16,7 @@
     "dev:dashboard": "npm --prefix dashboard run dev",
     "seed": "tsx scripts/seed-registry.ts",
     "test": "vitest run",
+    "test:dashboard": "npm --prefix dashboard run test",
     "typecheck": "tsc --noEmit && npm --prefix dashboard run typecheck"
   },
   "dependencies": {
