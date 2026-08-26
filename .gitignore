@@ -9,3 +9,8 @@ graphify-out/
 # hand-written static file. Same reasoning as any other build output.
 public/
 dashboard/node_modules/
+
+# Isolated git worktrees created for background subagents (Agent tool's
+# isolation: "worktree") — scratch checkouts, not repo content. Cleaned up
+# automatically once the agent finishes; never meant to be committed.
+.claude/worktrees/
