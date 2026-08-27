@@ -13,8 +13,8 @@ type AttentionItem =
   | { kind: "proposal"; id: string; title: string; sub: string }
   | { kind: "script"; id: string; title: string; sub: string };
 
-/** Everything that's actually waiting on the user, merged into one list — replaces the old always-visible Proposals and pending-Scripts sections, which took up sidebar space even when empty of anything actionable. */
-function NeedsAttentionSection({ data, refresh }: { data: ReturnType<typeof useSidebarData>; refresh: () => void }) {
+/** Everything that's actually waiting on the user, merged into one list — replaces the old always-visible Proposals and pending-Scripts sections, which took up sidebar space even when empty of anything actionable. Exported (rather than kept module-private) so its dispatch-by-kind logic can be tested directly — see test/Sidebar.needsAttention.test.tsx. */
+export function NeedsAttentionSection({ data, refresh }: { data: ReturnType<typeof useSidebarData>; refresh: () => void }) {
   const toast = useToast();
 
   async function actProposal(id: string, action: "approve" | "reject") {

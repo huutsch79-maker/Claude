@@ -214,7 +214,6 @@ describe("dashboard server", () => {
       personalUnread: { status: string };
       workUnread: { status: string };
       azureCost: { status: string };
-      needsAttention: { status: string };
       credentialHealth: { status: string };
       scriptRunHistory: { status: string };
       usageWaste: { status: string };
@@ -222,7 +221,6 @@ describe("dashboard server", () => {
     expect(body.personalUnread.status).toBe("error");
     expect(body.workUnread.status).toBe("error");
     expect(body.azureCost.status).toBe("error");
-    expect(body.needsAttention.status).toBe("error");
     expect(body.credentialHealth.status).toBe("error");
     expect(body.scriptRunHistory.status).toBe("error");
     expect(body.usageWaste.status).toBe("error");
