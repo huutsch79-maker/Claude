@@ -26,6 +26,17 @@ const CREDENTIAL_STATUS_ORDER: Record<CredentialStatusSummary["status"], number>
   valid: 3,
 };
 
+/**
+ * Upper bound on how many pending approvals a single /api/state response
+ * will ever serialize per domain. Without a cap, an unbounded pending map
+ * (whether from a bug or, once Phase 2 wires real proposals in, a genuine
+ * backlog) gets fully JSON.stringify'd on every poll — synchronously
+ * blocking the event loop this server shares with the orchestrator's own
+ * scheduled work. `totalPending` on the payload carries the true count so
+ * the UI can say "showing N of totalPending".
+ */
+export const APPROVAL_DISPLAY_LIMIT = 500;
+
 export function buildDashboardState(source: DashboardSource, opts: ReadModelOptions): DashboardStatePayload {
   const now = (opts.now ?? (() => new Date()))();
   const snapshot = source.snapshot();
@@ -42,7 +53,7 @@ function buildDomainState(
   now: Date,
   healthIntervalMs: number,
 ): DomainStatePayload {
-  const approvals = buildApprovals(source, domainId);
+  const { approvals, totalPending } = buildApprovals(source, domainId);
 
   if (!metadata) {
     return {
@@ -55,10 +66,32 @@ function buildDomainState(
       credentialStatus: [],
       errorCounts: { transient24h: 0, fatal24h: 0 },
       approvals,
+      totalPending,
     };
   }
 
-  const ageMs = now.getTime() - new Date(metadata.reportedAt).getTime();
+  const reportedAtMs = new Date(metadata.reportedAt).getTime();
+  if (!Number.isFinite(reportedAtMs)) {
+    // A malformed reportedAt would otherwise produce ageMs = NaN, which
+    // JSON.stringify silently turns into `null` on the wire — indistinguishable
+    // from a normal, healthy report. Flag it as stale/corrupt explicitly instead
+    // of letting it pass as if nothing were wrong.
+    return {
+      domain: domainId,
+      reportedAt: metadata.reportedAt,
+      ageMs: null,
+      stale: true,
+      awaitingFirstReport: false,
+      moduleHealth: metadata.moduleHealth,
+      credentialStatus: sortCredentialStatus(metadata.credentialStatus),
+      errorCounts: metadata.errorCounts,
+      approvals,
+      totalPending,
+    };
+  }
+
+  const ageMs = now.getTime() - reportedAtMs;
+  // Strict `>`: a report exactly 2x the interval old is (barely) still fresh.
   const stale = ageMs > 2 * healthIntervalMs;
 
   return {
@@ -71,17 +104,20 @@ function buildDomainState(
     credentialStatus: sortCredentialStatus(metadata.credentialStatus),
     errorCounts: metadata.errorCounts,
     approvals,
+    totalPending,
   };
 }
 
-function buildApprovals(source: DashboardSource, domainId: DomainId): ApprovalSummary[] {
+function buildApprovals(source: DashboardSource, domainId: DomainId): { approvals: ApprovalSummary[]; totalPending: number } {
   const pending = source.listPending(domainId);
-  return Array.from(pending.entries()).map(([id, request]) => ({
+  const all = Array.from(pending.entries()).map(([id, request]) => ({
     id,
     kind: request.kind,
     summary: request.summary,
     proposedAt: request.proposedAt,
   }));
+  all.sort((a, b) => a.proposedAt.localeCompare(b.proposedAt)); // oldest first — operators care most about the longest-waiting ones
+  return { approvals: all.slice(0, APPROVAL_DISPLAY_LIMIT), totalPending: all.length };
 }
 
 function sortCredentialStatus(entries: CredentialStatusSummary[]): CredentialStatusSummary[] {

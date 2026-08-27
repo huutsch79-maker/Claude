@@ -27,12 +27,37 @@ async function main(): Promise<void> {
     console.log(`JARVIS dashboard listening on http://${DASHBOARD_HOST}:${DASHBOARD_PORT}`);
   }
 
+  // http.Server.close()'s callback does not fire while any connection is
+  // still open (idle-keepalive or mid-request) — a single stalled client
+  // (flaky network, slow client, slowloris) would otherwise block shutdown
+  // forever. Bound it: give in-flight requests a grace period, then force-close
+  // any sockets still open so close() can resolve.
+  const SHUTDOWN_GRACE_MS = 2000;
+  const closeDashboardServer = (server: NonNullable<typeof dashboardServer>): Promise<void> =>
+    new Promise((resolve, reject) => {
+      const forceTimer = setTimeout(() => server.closeAllConnections(), SHUTDOWN_GRACE_MS);
+      server.close((err) => {
+        clearTimeout(forceTimer);
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+
+  let shuttingDown = false;
   const shutdown = async (signal: string) => {
+    // A second signal (SIGINT then SIGTERM, or the same signal delivered
+    // twice by a process manager) must be a no-op, not a second concurrent
+    // shutdown — dashboardServer.close() on an already-closed server rejects
+    // with ERR_SERVER_NOT_RUNNING, and an unhandled rejection here would
+    // crash the process before manager.shutdown() runs.
+    if (shuttingDown) {
+      console.log(`received ${signal} during shutdown, ignoring`);
+      return;
+    }
+    shuttingDown = true;
     console.log(`received ${signal}, shutting down...`);
     if (dashboardServer) {
-      await new Promise<void>((resolve, reject) => {
-        dashboardServer!.close((err) => (err ? reject(err) : resolve()));
-      });
+      await closeDashboardServer(dashboardServer);
     }
     await manager.shutdown();
     process.exit(0);

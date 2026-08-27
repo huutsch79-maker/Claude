@@ -78,6 +78,69 @@ describe("dashboard payload shape", () => {
     expect(() => assertDashboardPayloadShape(bad)).toThrow(/disallowed field/);
   });
 
+  it("rejects an allowed key carrying an arbitrary/leaked value instead of the expected type (Tester HIGH #1 repro)", () => {
+    // moduleId set to a nested object rather than a string: assertOnlyKeys alone
+    // (key-name checking) would let this sail through unchanged.
+    const bad: unknown = {
+      domains: [
+        {
+          domain: "work",
+          reportedAt: new Date().toISOString(),
+          ageMs: 0,
+          stale: false,
+          awaitingFirstReport: false,
+          moduleHealth: [{ moduleId: { leaked: "conversation excerpt" }, status: "healthy", lastRestartAt: null, restartCount24h: 0 }],
+          credentialStatus: [],
+          errorCounts: { transient24h: 0, fatal24h: 0 },
+          approvals: [],
+          totalPending: 0,
+        },
+      ],
+    };
+    expect(() => assertDashboardPayloadShape(bad)).toThrow(/moduleId must be a string/);
+  });
+
+  it("rejects a status value outside the known enum", () => {
+    const bad: unknown = {
+      domains: [
+        {
+          domain: "work",
+          reportedAt: new Date().toISOString(),
+          ageMs: 0,
+          stale: false,
+          awaitingFirstReport: false,
+          moduleHealth: [{ moduleId: "m1", status: "not-a-real-status", lastRestartAt: null, restartCount24h: 0 }],
+          credentialStatus: [],
+          errorCounts: { transient24h: 0, fatal24h: 0 },
+          approvals: [],
+          totalPending: 0,
+        },
+      ],
+    };
+    expect(() => assertDashboardPayloadShape(bad)).toThrow(/status must be one of/);
+  });
+
+  it("rejects NaN/Infinity anywhere a finite number is expected, even though typeof would pass", () => {
+    const baseDomain = {
+      domain: "work",
+      reportedAt: new Date().toISOString(),
+      stale: false,
+      awaitingFirstReport: false,
+      moduleHealth: [],
+      credentialStatus: [],
+      errorCounts: { transient24h: 0, fatal24h: 0 },
+      approvals: [],
+      totalPending: 0,
+    };
+    expect(() => assertDashboardPayloadShape({ domains: [{ ...baseDomain, ageMs: NaN }] })).toThrow(/ageMs must be a finite number/);
+    expect(() => assertDashboardPayloadShape({ domains: [{ ...baseDomain, ageMs: Infinity }] })).toThrow(/ageMs must be a finite number/);
+    expect(() =>
+      assertDashboardPayloadShape({
+        domains: [{ ...baseDomain, ageMs: 0, errorCounts: { transient24h: NaN, fatal24h: 0 } }],
+      }),
+    ).toThrow(/transient24h must be a finite number/);
+  });
+
   it("serialized payload's key set is exactly the whitelist at every nesting level", () => {
     const pending = new Map<DomainId, Map<string, ApprovalRequest>>([
       ["work", new Map([["a1", { domain: "work", summary: "restart foo", kind: "module_add", proposedAt: new Date().toISOString() }]])],
@@ -94,7 +157,18 @@ describe("dashboard payload shape", () => {
 
     const domainEntry = round.domains[0]!;
     expect(Object.keys(domainEntry).sort()).toEqual(
-      ["approvals", "credentialStatus", "domain", "errorCounts", "moduleHealth", "reportedAt", "ageMs", "stale", "awaitingFirstReport"].sort(),
+      [
+        "approvals",
+        "credentialStatus",
+        "domain",
+        "errorCounts",
+        "moduleHealth",
+        "reportedAt",
+        "ageMs",
+        "stale",
+        "awaitingFirstReport",
+        "totalPending",
+      ].sort(),
     );
     expect(Object.keys(domainEntry.moduleHealth[0]!).sort()).toEqual(
       ["moduleId", "status", "lastRestartAt", "restartCount24h"].sort(),
@@ -138,6 +212,7 @@ describe("dashboard read model", () => {
       expect(d.credentialStatus).toEqual([]);
       expect(d.errorCounts).toEqual({ transient24h: 0, fatal24h: 0 });
       expect(d.approvals).toEqual([]);
+      expect(d.totalPending).toBe(0);
     }
     expect(() => assertDashboardPayloadShape(payload)).not.toThrow();
   });
@@ -152,6 +227,45 @@ describe("dashboard read model", () => {
     const payload = buildDashboardState(source, { healthIntervalMs: 5 * 60 * 1000 }); // stale threshold: 10 min
     expect(payload.domains[0]!.stale).toBe(true);
     expect(payload.domains[0]!.awaitingFirstReport).toBe(false);
+  });
+
+  it("flags a malformed reportedAt as stale/corrupt instead of silently passing NaN age as healthy (Tester MEDIUM #5 repro)", () => {
+    const badMetadata = validMetadata("work");
+    (badMetadata as OperationalMetadata).reportedAt = "not-a-real-timestamp";
+    const source = makeFakeSource({
+      domains: [{ id: "work", label: "NZB (work)" }],
+      metadata: new Map([["work", badMetadata]]),
+    });
+    const payload = buildDashboardState(source, { healthIntervalMs: 5 * 60 * 1000 });
+    const domain = payload.domains[0]!;
+    expect(domain.ageMs).toBeNull();
+    expect(domain.stale).toBe(true);
+    expect(domain.awaitingFirstReport).toBe(false);
+    // Not indistinguishable from a normal report: assertDashboardPayloadShape
+    // must still accept this (ageMs: null is valid), but stale must be true.
+    expect(() => assertDashboardPayloadShape(payload)).not.toThrow();
+  });
+
+  it("caps the approvals array and reports the true count via totalPending (Tester MEDIUM #6 repro)", () => {
+    const pendingMap = new Map<string, ApprovalRequest>();
+    const totalApprovals = 800; // > APPROVAL_DISPLAY_LIMIT (500)
+    for (let i = 0; i < totalApprovals; i++) {
+      const proposedAt = new Date(Date.now() - (totalApprovals - i) * 1000).toISOString(); // ascending, oldest first
+      pendingMap.set(`approval-${i}`, { domain: "work", summary: `proposal ${i}`, kind: "module_add", proposedAt });
+    }
+    const source = makeFakeSource({
+      domains: [{ id: "work", label: "NZB (work)" }],
+      metadata: new Map([["work", validMetadata("work")]]),
+      pending: new Map([["work", pendingMap]]),
+    });
+    const payload = buildDashboardState(source, { healthIntervalMs: 5 * 60 * 1000 });
+    const domain = payload.domains[0]!;
+    expect(domain.totalPending).toBe(totalApprovals);
+    expect(domain.approvals.length).toBeLessThanOrEqual(500);
+    expect(domain.approvals.length).toBe(500);
+    // Oldest-first: the first entry in the capped array should be approval-0.
+    expect(domain.approvals[0]!.id).toBe("approval-0");
+    expect(() => assertDashboardPayloadShape(payload)).not.toThrow();
   });
 
   it("sorts credential status worst-first: expired > invalid > expiring_soon > valid", () => {
@@ -183,6 +297,8 @@ describe("dashboard structural isolation (static analysis)", () => {
     "relationsStore.js",
     "credentialStore.js",
     "capabilityRegistry.js",
+    "db.js",
+    "createDomainPool",
     'from "pg"',
     'require("pg")',
   ];
@@ -260,6 +376,16 @@ describe("dashboard HTTP server", () => {
     });
   });
 
+  it("HEAD / is served like GET / but with no body", async () => {
+    const source = makeFakeSource();
+    await withServer(source, async (baseUrl) => {
+      const res = await fetch(`${baseUrl}/`, { method: "HEAD" });
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("text/html");
+      expect(await res.text()).toBe("");
+    });
+  });
+
   it("unknown path returns 404 JSON", async () => {
     const source = makeFakeSource();
     await withServer(source, async (baseUrl) => {
@@ -284,6 +410,24 @@ describe("dashboard HTTP server", () => {
       expect(res1.status).toBe(403);
       const res2 = await fetch(`${baseUrl}/anything`, { method: "POST" });
       expect(res2.status).toBe(403);
+    });
+  });
+
+  it("a poisoned source (leaked object value in moduleId) never reaches the wire — 500, not the leaked data (Tester HIGH #1 end-to-end repro)", async () => {
+    const poisonedMetadata = {
+      ...validMetadata("work"),
+      moduleHealth: [{ moduleId: { leaked: "conversation excerpt, should never serialize" }, status: "healthy", lastRestartAt: null, restartCount24h: 0 }],
+    } as unknown as OperationalMetadata;
+    const source = makeFakeSource({
+      domains: [{ id: "work", label: "NZB (work)" }],
+      metadata: new Map([["work", poisonedMetadata]]),
+    });
+    await withServer(source, async (baseUrl) => {
+      const res = await fetch(`${baseUrl}/api/state`);
+      const bodyText = await res.text();
+      expect(res.status).toBe(500);
+      expect(bodyText).not.toContain("leaked");
+      expect(JSON.parse(bodyText)).toEqual({ error: "internal error" });
     });
   });
 

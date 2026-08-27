@@ -230,8 +230,8 @@ export const DASHBOARD_HTML: string = `<!doctype html>
       "</div>";
   }
 
-  function renderApprovals(approvals) {
-    if (!approvals.length) {
+  function renderApprovals(approvals, totalPending) {
+    if (!totalPending) {
       return '<p class="empty-state">None pending.</p>';
     }
     var body = approvals.map(function (a) {
@@ -241,8 +241,12 @@ export const DASHBOARD_HTML: string = `<!doctype html>
         "<td>" + escapeHtml(a.proposedAt) + "</td>" +
         "</tr>";
     }).join("");
-    return '<table><thead><tr><th>Kind</th><th>Summary</th><th>Proposed at</th></tr></thead>' +
+    var table = '<table><thead><tr><th>Kind</th><th>Summary</th><th>Proposed at</th></tr></thead>' +
       "<tbody>" + body + "</tbody></table>";
+    if (totalPending > approvals.length) {
+      table += '<p class="empty-state">Showing ' + approvals.length + " of " + totalPending + " (oldest first).</p>";
+    }
+    return table;
   }
 
   function renderDomainCard(d) {
@@ -256,7 +260,7 @@ export const DASHBOARD_HTML: string = `<!doctype html>
         '<section><p class="section-title">Credential status</p>' + renderCredentialStatus(d.credentialStatus) + "</section>" +
         '<section><p class="section-title">Error counts</p>' + renderErrorCounts(d.errorCounts) + "</section>";
     }
-    body += '<section><p class="section-title">Pending approvals</p>' + renderApprovals(d.approvals) + "</section>";
+    body += '<section><p class="section-title">Pending approvals</p>' + renderApprovals(d.approvals, d.totalPending) + "</section>";
 
     return '<div class="card" data-domain="' + escapeHtml(d.domain) + '">' +
       '<div class="card-header"><h2>' + escapeHtml(d.domain) + "</h2>" + badge + "</div>" +

@@ -35,6 +35,12 @@ async function handleRequest(
     const url = new URL(req.url ?? "/", "http://localhost");
     const pathname = url.pathname;
 
+    // HEAD is routed exactly like GET (so uptime probes that default to
+    // HEAD get a real status instead of a blanket 405) but the body is
+    // omitted from the response, per HTTP semantics.
+    const isHead = method === "HEAD";
+    const routeMethod = isHead ? "GET" : method;
+
     // CORS-preflight protection (not auth): the server sends no CORS
     // headers of its own, so without this a cross-origin browser POST could
     // reach it blind. This guard runs before route dispatch, for any POST
@@ -42,56 +48,56 @@ async function handleRequest(
     if (method === "POST") {
       const header = req.headers[DASHBOARD_HEADER];
       if (header !== "1") {
-        writeJson(res, 403, { error: "missing X-Jarvis-Dashboard header" });
+        writeJson(res, 403, { error: "missing X-Jarvis-Dashboard header" }, isHead);
         return;
       }
     }
 
     if (pathname === "/") {
-      if (method !== "GET") {
-        writeJson(res, 405, { error: "method not allowed" });
+      if (routeMethod !== "GET") {
+        writeJson(res, 405, { error: "method not allowed" }, isHead);
         return;
       }
-      writeHtml(res, 200, DASHBOARD_HTML);
+      writeHtml(res, 200, DASHBOARD_HTML, isHead);
       return;
     }
 
     if (pathname === "/api/state") {
-      if (method !== "GET") {
-        writeJson(res, 405, { error: "method not allowed" });
+      if (routeMethod !== "GET") {
+        writeJson(res, 405, { error: "method not allowed" }, isHead);
         return;
       }
       const payload = buildDashboardState(source, { healthIntervalMs: opts.healthIntervalMs });
       assertDashboardPayloadShape(payload);
-      writeJson(res, 200, payload);
+      writeJson(res, 200, payload, isHead);
       return;
     }
 
     if (pathname === "/api/healthz") {
-      if (method !== "GET") {
-        writeJson(res, 405, { error: "method not allowed" });
+      if (routeMethod !== "GET") {
+        writeJson(res, 405, { error: "method not allowed" }, isHead);
         return;
       }
-      writeJson(res, 200, { ok: true });
+      writeJson(res, 200, { ok: true }, isHead);
       return;
     }
 
-    writeJson(res, 404, { error: "not found" });
+    writeJson(res, 404, { error: "not found" }, isHead);
   } catch (err) {
     console.error("[dashboard] request handler error", err);
     if (!res.headersSent) {
-      writeJson(res, 500, { error: "internal error" });
+      writeJson(res, 500, { error: "internal error" }, req.method === "HEAD");
     }
   }
 }
 
-function writeJson(res: http.ServerResponse, status: number, body: unknown): void {
+function writeJson(res: http.ServerResponse, status: number, body: unknown, omitBody = false): void {
   const data = JSON.stringify(body);
   res.writeHead(status, { "content-type": "application/json" });
-  res.end(data);
+  res.end(omitBody ? undefined : data);
 }
 
-function writeHtml(res: http.ServerResponse, status: number, html: string): void {
+function writeHtml(res: http.ServerResponse, status: number, html: string, omitBody = false): void {
   res.writeHead(status, { "content-type": "text/html; charset=utf-8" });
-  res.end(html);
+  res.end(omitBody ? undefined : html);
 }
