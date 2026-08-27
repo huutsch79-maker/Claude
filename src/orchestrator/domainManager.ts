@@ -51,6 +51,7 @@ export class DomainManager {
           this.bus.publish(metadata);
         },
         (err) => console.error(`[${domain.config.id}] health report failed`, err),
+        { immediate: true },
       );
     }
   }

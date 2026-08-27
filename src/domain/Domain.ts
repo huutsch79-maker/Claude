@@ -27,6 +27,7 @@ export class DomainInstance {
   readonly reviewer: Reviewer;
   readonly selfHeal: SelfHeal;
   readonly security: SecurityAccess;
+  readonly approvals: ApprovalGate;
 
   private readonly pool: pg.Pool;
   private moduleRestartCounts = new Map<string, number>();
@@ -46,6 +47,7 @@ export class DomainInstance {
 
     const notifier = new PushoverApprovalNotifier(config);
     const approvalGate = new ApprovalGate(notifier);
+    this.approvals = approvalGate;
     const handlers: SelfHealHandlers = {
       restartModule: async (moduleName) => {
         this.moduleRestartCounts.set(moduleName, (this.moduleRestartCounts.get(moduleName) ?? 0) + 1);

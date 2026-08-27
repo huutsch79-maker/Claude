@@ -4,6 +4,7 @@ export interface ApprovalRequest {
   domain: string;
   summary: string; // operational description only — no domain content
   kind: string;
+  proposedAt: string; // ISO timestamp
 }
 
 /**
@@ -50,9 +51,10 @@ export class ApprovalGate {
 
   constructor(private readonly notifier: ApprovalNotifier) {}
 
-  async propose(id: string, request: ApprovalRequest): Promise<void> {
-    this.pending.set(id, request);
-    await this.notifier.notify(request);
+  async propose(id: string, request: Omit<ApprovalRequest, "proposedAt">): Promise<void> {
+    const fullRequest: ApprovalRequest = { ...request, proposedAt: new Date().toISOString() };
+    this.pending.set(id, fullRequest);
+    await this.notifier.notify(fullRequest);
   }
 
   approve(id: string): ApprovalRequest | null {
