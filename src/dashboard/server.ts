@@ -24,6 +24,26 @@ export function createDashboardServer(source: DashboardSource, opts: DashboardSe
   });
 }
 
+/**
+ * http.Server.close()'s callback does not fire while any connection is
+ * still open (idle-keepalive or mid-request) — a single stalled client
+ * (flaky network, slow client, slowloris) would otherwise block shutdown
+ * forever. Bounded here: give in-flight requests a grace period, then
+ * force-close any sockets still open so close() can resolve. Exported so
+ * it can be exercised directly against a real stalled connection in tests,
+ * not just trusted by inspection.
+ */
+export function closeServer(server: http.Server, graceMs = 2000): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const forceTimer = setTimeout(() => server.closeAllConnections(), graceMs);
+    server.close((err) => {
+      clearTimeout(forceTimer);
+      if (err) reject(err);
+      else resolve();
+    });
+  });
+}
+
 async function handleRequest(
   source: DashboardSource,
   opts: DashboardServerOptions,

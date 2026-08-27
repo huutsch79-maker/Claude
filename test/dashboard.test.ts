@@ -7,7 +7,8 @@ import type { OperationalMetadata } from "../src/orchestrator/operationalMetadat
 import type { ApprovalRequest } from "../src/core/approvalGate.js";
 import { assertDashboardPayloadShape, type DashboardSource, type DashboardStatePayload } from "../src/dashboard/types.js";
 import { buildDashboardState } from "../src/dashboard/readModel.js";
-import { createDashboardServer } from "../src/dashboard/server.js";
+import { createDashboardServer, closeServer } from "../src/dashboard/server.js";
+import * as net from "node:net";
 
 function validMetadata(domain: DomainId): OperationalMetadata {
   return {
@@ -442,5 +443,30 @@ describe("dashboard HTTP server", () => {
       expect(res.status).toBe(500);
       expect(await res.json()).toEqual({ error: "internal error" });
     });
+  });
+
+  it("closeServer resolves within its grace period even with a stalled mid-request connection (Tester HIGH #3 repro)", async () => {
+    const source = makeFakeSource();
+    const server = createDashboardServer(source, { healthIntervalMs: 5 * 60 * 1000 });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address() as AddressInfo;
+
+    const socket = net.connect(port, "127.0.0.1");
+    await new Promise<void>((resolve) => socket.once("connect", resolve));
+    // Send an incomplete request line — no terminating \r\n\r\n — so the
+    // server never finishes parsing it and the connection stays open,
+    // exactly like a slow client or a slowloris attempt.
+    socket.write("GET /api/state HTTP/1.1\r\nHost: localhost\r\n");
+
+    const start = Date.now();
+    const GRACE_MS = 300; // short for test speed; production default is 2000
+    await closeServer(server, GRACE_MS);
+    const elapsed = Date.now() - start;
+
+    // Should resolve once the grace timer force-closes the stalled
+    // connection, not hang forever — bounded well above the grace period
+    // (flaky-CI headroom) but nowhere near "never".
+    expect(elapsed).toBeLessThan(GRACE_MS + 2000);
+    socket.destroy();
   });
 });
