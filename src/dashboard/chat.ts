@@ -13,6 +13,27 @@ export const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
 const IMAGE_MEDIA_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
 const DOCUMENT_MEDIA_TYPES = new Set(["application/pdf", "text/plain"]);
 
+/**
+ * Magic-byte checks for the image types above — a claimed mediaType alone is
+ * attacker-controlled and was previously trusted with zero content
+ * inspection (Tester MEDIUM #2 repro: a PE-executable's bytes, MZ header,
+ * submitted as mediaType: "image/png", sailed straight through to the
+ * Anthropic API as a real image content block). Deliberately NOT a general
+ * file-type-detection library — just the four leading-byte signatures for
+ * the exact types this endpoint accepts.
+ */
+const IMAGE_MAGIC_BYTES: Record<string, (buf: Buffer) => boolean> = {
+  "image/png": (buf) => buf.length >= 8 && buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
+  "image/jpeg": (buf) => buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff,
+  "image/gif": (buf) => buf.length >= 6 && (buf.toString("latin1", 0, 6) === "GIF87a" || buf.toString("latin1", 0, 6) === "GIF89a"),
+  "image/webp": (buf) => buf.length >= 12 && buf.toString("latin1", 0, 4) === "RIFF" && buf.toString("latin1", 8, 12) === "WEBP",
+};
+
+function matchesClaimedImageType(mediaType: string, buf: Buffer): boolean {
+  const check = IMAGE_MAGIC_BYTES[mediaType];
+  return check ? check(buf) : false;
+}
+
 export interface ChatAttachmentInput {
   filename: string;
   mediaType: string;
@@ -96,6 +117,9 @@ export function validateAttachments(raw: ChatAttachmentInput[]): AttachmentValid
   for (const img of images) {
     if (img.buf.length > MAX_IMAGE_BYTES) {
       return { ok: false, reason: `too large — ${formatMb(img.buf.length)} MB, limit ${formatMb(MAX_IMAGE_BYTES)} MB` };
+    }
+    if (!matchesClaimedImageType(img.mediaType, img.buf)) {
+      return { ok: false, reason: `file content doesn't match the claimed type — ${img.filename} (${img.mediaType})` };
     }
   }
   return {

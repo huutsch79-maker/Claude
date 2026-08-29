@@ -1,4 +1,4 @@
-import type { DomainId } from "../config/domains.js";
+import { DOMAIN_IDS, type DomainId } from "../config/domains.js";
 
 /**
  * The ONLY shape allowed to cross the domain boundary carrying informative
@@ -49,6 +49,7 @@ const TOP_SERVICE_KEYS = new Set(["serviceName", "cost"]);
 const MAIL_SUMMARY_KEYS = new Set(["status", "unreadCount", "totalCount", "topSenders", "lastSyncedAt"]);
 const AZURE_COST_KEYS = new Set(["status", "currency", "monthToDateCost", "topServices", "lastSyncedAt"]);
 const TOP_LEVEL_KEYS = new Set(["domain", "reportedAt", "mail", "azureCost"]);
+const VALID_DOMAIN_IDS = new Set<string>(DOMAIN_IDS);
 
 /**
  * Defense in depth, mirroring assertOperationalMetadataShape: throws rather
@@ -62,7 +63,14 @@ export function assertDomainContentSummaryShape(value: unknown): asserts value i
   assertOnlyKeys(value, TOP_LEVEL_KEYS, "domain content summary");
   const v = value as Record<string, unknown>;
 
-  if (typeof v.domain !== "string") throw new Error("domain content summary: domain must be a string");
+  // Not just "is a string" — must be an actual known DomainId, so a bug that
+  // ever let this field be attacker- or producer-controlled free text can't
+  // key ContentBus's per-domain map by something other than a real domain
+  // (Tester LOW #4 repro; latent today since both producers hardcode
+  // domain: this.config.id from static config, but cheap to close here).
+  if (typeof v.domain !== "string" || !VALID_DOMAIN_IDS.has(v.domain)) {
+    throw new Error(`domain content summary: domain must be one of: ${Array.from(VALID_DOMAIN_IDS).join(", ")}`);
+  }
   if (typeof v.reportedAt !== "string") throw new Error("domain content summary: reportedAt must be a string");
 
   assertMailSummaryShape(v.mail, "domain content summary: mail");

@@ -46,5 +46,14 @@ export function createDashboardSource(manager: DomainManager): DashboardSource {
     async recentChatHistory(domainId: DomainId, limit?: number): Promise<ChatHistoryEntry[]> {
       return manager.get(domainId).chatHistory.recentForDisplay(limit);
     },
+
+    async recentChatContext(domainId: DomainId, limit?: number): Promise<{ role: ChatRole; content: string }[]> {
+      // recentForContext() is conversation-scoped (it resolves the CURRENT
+      // conversation id itself, same as appendChatMessage above) — the fix
+      // for Tester HIGH #1: this must never be recentForDisplay(), which is
+      // domain-wide across every past conversation.
+      const entries = await manager.get(domainId).chatHistory.recentForContext(limit);
+      return entries.map((e) => ({ role: e.role, content: e.content }));
+    },
   };
 }

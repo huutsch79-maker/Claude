@@ -51,7 +51,19 @@ export interface DashboardSource {
   contentSnapshot(): ReadonlyMap<DomainId, DomainContentSummary>;
   listPending(domainId: DomainId): ReadonlyMap<string, ApprovalRequest>;
   appendChatMessage(domainId: DomainId, entry: { role: ChatRole; content: string; attachments: ChatAttachmentMeta[] }): Promise<void>;
+  /** Full retained history across every past conversation for this domain, oldest-first — what the page shows on load. NOT conversation-scoped; never use this to build LLM replay context (see recentChatContext). */
   recentChatHistory(domainId: DomainId, limit?: number): Promise<ChatHistoryEntry[]>;
+  /**
+   * Prior turns from the CURRENT conversation only, oldest-first — the one
+   * method that's safe to feed the LLM as replay context. Distinct from
+   * recentChatHistory on purpose: a domain's full retained history spans
+   * every past conversation (including ones separated by the 24h idle gap),
+   * and the model must never see an older, unrelated conversation's content
+   * as if it were live context for a brand-new one (Tester HIGH #1 repro —
+   * a literal PII string from a 30h-old conversation leaking into a fresh
+   * conversation's LLM context via the wrong, domain-wide method).
+   */
+  recentChatContext(domainId: DomainId, limit?: number): Promise<{ role: ChatRole; content: string }[]>;
 }
 
 /** One pending approval as rendered to the dashboard. */

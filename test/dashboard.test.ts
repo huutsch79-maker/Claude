@@ -74,8 +74,11 @@ function makeFakeSource(opts: {
   content?: Map<DomainId, DomainContentSummary>;
   contentSnapshotImpl?: () => ReadonlyMap<DomainId, DomainContentSummary>;
   chatHistory?: Map<DomainId, ChatHistoryEntry[]>;
+  /** Distinct from chatHistory on purpose — models the CURRENT-conversation-only context source. Defaults to mirroring chatHistory (role/content only) for tests that don't care about the distinction; set this explicitly to test conversation-scoping (see "dashboard HTTP server: chat route" > context-boundary tests). */
+  chatContext?: Map<DomainId, { role: ChatRole; content: string }[]>;
   appendedChatCalls?: AppendedChatCall[];
   recentChatHistoryImpl?: (domainId: DomainId, limit?: number) => Promise<ChatHistoryEntry[]>;
+  recentChatContextImpl?: (domainId: DomainId, limit?: number) => Promise<{ role: ChatRole; content: string }[]>;
   appendChatMessageImpl?: (domainId: DomainId, entry: { role: ChatRole; content: string; attachments: ChatAttachmentMeta[] }) => Promise<void>;
 } = {}): DashboardSource {
   const domains = opts.domains ?? [
@@ -104,6 +107,21 @@ function makeFakeSource(opts: {
       (async (domainId, limit) => {
         const list = chatHistory.get(domainId) ?? [];
         return limit ? list.slice(Math.max(0, list.length - limit)) : list;
+      }),
+    recentChatContext:
+      opts.recentChatContextImpl ??
+      (async (domainId, limit) => {
+        if (opts.chatContext) {
+          const list = opts.chatContext.get(domainId) ?? [];
+          return limit ? list.slice(Math.max(0, list.length - limit)) : list;
+        }
+        // No explicit chatContext given: fall back to chatHistory, mapped to
+        // {role, content} — a reasonable default for tests that don't care
+        // about the display/context distinction. Tests that DO care set
+        // chatContext explicitly (see conversation-boundary tests below).
+        const list = chatHistory.get(domainId) ?? [];
+        const mapped = list.map((e) => ({ role: e.role, content: e.content }));
+        return limit ? mapped.slice(Math.max(0, mapped.length - limit)) : mapped;
       }),
   };
 }
@@ -981,6 +999,29 @@ describe("dashboard HTTP server: chat route", () => {
     );
   });
 
+  it("rejects an attachment whose bytes don't match its claimed image mediaType, end-to-end — before the backend is ever called (Tester MEDIUM #2 repro)", async () => {
+    const backend = makeFakeChatBackend();
+    const appendedChatCalls: AppendedChatCall[] = [];
+    const source = makeFakeSource({ appendedChatCalls });
+    // Real 'MZ' PE-executable magic bytes, claimed as image/png.
+    const peBytes = Buffer.concat([Buffer.from("MZ", "ascii"), Buffer.alloc(100, 0)]);
+    await withServer(
+      source,
+      async (baseUrl) => {
+        const res = await postChat(baseUrl, "work", {
+          message: "open this",
+          attachments: [{ filename: "totally-safe.exe", mediaType: "image/png", dataBase64: peBytes.toString("base64") }],
+        });
+        expect(res.status).toBe(400);
+        const body = (await res.json()) as { error: string };
+        expect(body.error).toMatch(/doesn't match the claimed type/);
+        expect(backend.calls).toHaveLength(0);
+        expect(appendedChatCalls).toHaveLength(0);
+      },
+      { chatBackend: backend },
+    );
+  });
+
   it("a normal turn round-trips: persists the user turn, calls the backend once, persists and returns the reply", async () => {
     const backend = makeFakeChatBackend({ replyText: "here is my answer" });
     const appendedChatCalls: AppendedChatCall[] = [];
@@ -1013,7 +1054,8 @@ describe("dashboard HTTP server: chat route", () => {
     const backend = makeFakeChatBackend();
     const appendedChatCalls: AppendedChatCall[] = [];
     const source = makeFakeSource({ appendedChatCalls });
-    const imageBytes = Buffer.from("not a real png but small", "utf8");
+    // Real PNG magic-byte prefix so this clears the content-sniffing check in validateAttachments.
+    const imageBytes = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from("small payload", "utf8")]);
     const dataBase64 = imageBytes.toString("base64");
     await withServer(
       source,
@@ -1061,6 +1103,104 @@ describe("dashboard HTTP server: chat route", () => {
           { role: "user", content: "first message" },
           { role: "assistant", content: "first reply" },
         ]);
+      },
+      { chatBackend: backend },
+    );
+  });
+
+  it("does NOT leak an older, unrelated conversation's content into a new conversation's LLM context (Tester HIGH #1 repro)", async () => {
+    const backend = makeFakeChatBackend();
+    // Full domain-wide DISPLAY history (recentChatHistory / GET .../history)
+    // still contains the old conversation, including a literal PII string —
+    // this is intentional; display spans every past session.
+    const chatHistory = new Map<DomainId, ChatHistoryEntry[]>([
+      [
+        "work",
+        [
+          { role: "user", content: "my SSN is 123-45-6789", attachments: [], createdAt: new Date(Date.now() - 30 * 60 * 60 * 1000).toISOString() },
+          { role: "assistant", content: "noted, from 30h ago", attachments: [], createdAt: new Date(Date.now() - 30 * 60 * 60 * 1000).toISOString() },
+        ],
+      ],
+    ]);
+    // The CURRENT-conversation-only context source is empty — the 24h idle
+    // gap means a brand-new conversation was minted with no prior turns.
+    const chatContext = new Map<DomainId, { role: ChatRole; content: string }[]>([["work", []]]);
+    const source = makeFakeSource({ chatHistory, chatContext });
+
+    await withServer(
+      source,
+      async (baseUrl) => {
+        await postChat(baseUrl, "work", { message: "what's my SSN?" });
+
+        // The backend — and therefore the model — never sees the old
+        // conversation's content as context for the new one.
+        expect(backend.calls[0]!.priorMessages).toEqual([]);
+        const sentToModel = JSON.stringify(backend.calls[0]!.priorMessages);
+        expect(sentToModel).not.toContain("123-45-6789");
+
+        // Display/history is untouched by this — the old conversation is
+        // still visible there, per the documented design.
+        const historyRes = await fetch(`${baseUrl}/api/chat/work/history`);
+        const historyBody = (await historyRes.json()) as { messages: ChatHistoryEntry[] };
+        expect(historyBody.messages.some((m) => m.content.includes("123-45-6789"))).toBe(true);
+      },
+      { chatBackend: backend },
+    );
+  });
+
+  it("on backend failure, the user turn is never orphaned in persisted history — nothing is written until the reply succeeds (Tester HIGH #3 repro)", async () => {
+    const backend = makeFakeChatBackend({
+      impl: async () => {
+        throw new Error("simulated Anthropic API failure");
+      },
+    });
+    const appendedChatCalls: AppendedChatCall[] = [];
+    const chatHistory = new Map<DomainId, ChatHistoryEntry[]>();
+    const source = makeFakeSource({ appendedChatCalls, chatHistory });
+
+    await withServer(
+      source,
+      async (baseUrl) => {
+        const res = await postChat(baseUrl, "work", { message: "this will fail" });
+        expect(res.status).toBe(500);
+
+        // Nothing was persisted — no dangling user message with no reply.
+        expect(appendedChatCalls).toHaveLength(0);
+
+        const historyRes = await fetch(`${baseUrl}/api/chat/work/history`);
+        const historyBody = (await historyRes.json()) as { messages: ChatHistoryEntry[] };
+        expect(historyBody.messages).toEqual([]);
+      },
+      { chatBackend: backend },
+    );
+  });
+
+  it("a turn that succeeds AFTER a prior failed turn persists cleanly, with no residue from the failed attempt", async () => {
+    let callCount = 0;
+    const backend = makeFakeChatBackend({
+      impl: async () => {
+        callCount += 1;
+        if (callCount === 1) throw new Error("simulated transient failure");
+        return { text: "second attempt succeeded" };
+      },
+    });
+    const appendedChatCalls: AppendedChatCall[] = [];
+    const chatHistory = new Map<DomainId, ChatHistoryEntry[]>();
+    const source = makeFakeSource({ appendedChatCalls, chatHistory });
+
+    await withServer(
+      source,
+      async (baseUrl) => {
+        const failedRes = await postChat(baseUrl, "work", { message: "first try" });
+        expect(failedRes.status).toBe(500);
+        expect(appendedChatCalls).toHaveLength(0);
+
+        const okRes = await postChat(baseUrl, "work", { message: "second try" });
+        expect(okRes.status).toBe(200);
+
+        expect(appendedChatCalls).toHaveLength(2);
+        expect(appendedChatCalls[0]!.entry).toMatchObject({ role: "user", content: "second try" });
+        expect(appendedChatCalls[1]!.entry).toMatchObject({ role: "assistant", content: "second attempt succeeded" });
       },
       { chatBackend: backend },
     );

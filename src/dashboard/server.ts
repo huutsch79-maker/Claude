@@ -207,15 +207,29 @@ async function handleChatRoute(
     return;
   }
 
-  const priorEntries = await source.recentChatHistory(domainId, CHAT_CONTEXT_LIMIT);
-  const priorMessages = priorEntries.map((e) => ({ role: e.role, content: e.content }));
+  // Conversation-scoped, NOT recentChatHistory (which is domain-wide across
+  // every past conversation) — the model must never see an older,
+  // unrelated conversation's content as live context for this one (Tester
+  // HIGH #1 repro). Computed before either append below, so it reflects
+  // state prior to this turn.
+  const priorMessages = await source.recentChatContext(domainId, CHAT_CONTEXT_LIMIT);
 
   // Persist metadata only — filename/mediaType/sizeBytes, never dataBase64/raw bytes.
   const attachmentMeta = validation.attachments.map((a) => ({ filename: a.filename, mediaType: a.mediaType, sizeBytes: a.sizeBytes }));
-  await source.appendChatMessage(domainId, { role: "user", content: parsed.message, attachments: attachmentMeta });
 
+  // The user turn is persisted only once the backend call succeeds, both
+  // turns together. Persisting the user turn eagerly (the old order) would
+  // orphan it in history with no reply and no failure marker whenever the
+  // LLM call fails — routine for real APIs, not just a rare edge case — so
+  // a reload or domain-switch-and-back would show an unanswered question
+  // indistinguishable from "still pending" (Tester HIGH #3 repro). On a
+  // throw here, nothing is written; the outer handler returns 500 and
+  // history is left exactly as it was, matching the client's transient,
+  // never-persisted error bubble.
   const reply = await opts.chatBackend.send(domainId, parsed.message, validation.attachments, priorMessages);
   const createdAt = new Date().toISOString();
+
+  await source.appendChatMessage(domainId, { role: "user", content: parsed.message, attachments: attachmentMeta });
   await source.appendChatMessage(domainId, { role: "assistant", content: reply.text, attachments: [] });
 
   writeJson(res, 200, { reply: { text: reply.text, createdAt } }, isHead);

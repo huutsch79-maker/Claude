@@ -13,8 +13,17 @@ function b64(byteLength: number): string {
   return Buffer.alloc(byteLength, 7).toString("base64");
 }
 
+const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+/** A real PNG-magic-byte-prefixed buffer, padded to byteLength — passes the content-sniffing check in validateAttachments. */
+function pngBuffer(byteLength: number): Buffer {
+  const buf = Buffer.alloc(Math.max(byteLength, PNG_MAGIC.length), 7);
+  PNG_MAGIC.copy(buf, 0);
+  return buf.subarray(0, byteLength);
+}
+
 function image(filename: string, byteLength: number, mediaType = "image/png"): ChatAttachmentInput {
-  return { filename, mediaType, dataBase64: b64(byteLength) };
+  return { filename, mediaType, dataBase64: pngBuffer(byteLength).toString("base64") };
 }
 
 describe("validateAttachments", () => {
@@ -48,6 +57,35 @@ describe("validateAttachments", () => {
   it("accepts an image at exactly MAX_IMAGE_BYTES", () => {
     const result = validateAttachments([image("exact.png", MAX_IMAGE_BYTES)]);
     expect(result.ok).toBe(true);
+  });
+
+  it("rejects a PE executable's bytes submitted as image/png — content-sniffing catches a mismatched claimed type (Tester MEDIUM #2 repro)", () => {
+    // Real 'MZ' DOS/PE-executable magic header, mislabeled as a PNG.
+    const peBytes = Buffer.concat([Buffer.from("MZ", "ascii"), Buffer.alloc(100, 0)]);
+    const result = validateAttachments([{ filename: "totally-safe.exe", mediaType: "image/png", dataBase64: peBytes.toString("base64") }]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toMatch(/doesn't match the claimed type/);
+      expect(result.reason).toContain("totally-safe.exe");
+    }
+  });
+
+  it("rejects any image whose leading bytes don't match its claimed mediaType, for every accepted image type", () => {
+    const wrongBytes = Buffer.alloc(20, 0x41); // plain 'A' bytes — matches no image magic number
+    for (const mediaType of ["image/png", "image/jpeg", "image/gif", "image/webp"]) {
+      const result = validateAttachments([{ filename: `fake.${mediaType.split("/")[1]}`, mediaType, dataBase64: wrongBytes.toString("base64") }]);
+      expect(result.ok, `expected ${mediaType} with wrong-magic bytes to be rejected`).toBe(false);
+    }
+  });
+
+  it("accepts real JPEG/GIF/WebP magic bytes for their matching claimed mediaType", () => {
+    const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff]), Buffer.alloc(20, 1)]);
+    const gif = Buffer.concat([Buffer.from("GIF89a", "ascii"), Buffer.alloc(20, 1)]);
+    const webp = Buffer.concat([Buffer.from("RIFF", "ascii"), Buffer.alloc(4, 0), Buffer.from("WEBP", "ascii"), Buffer.alloc(20, 1)]);
+
+    expect(validateAttachments([{ filename: "a.jpg", mediaType: "image/jpeg", dataBase64: jpeg.toString("base64") }]).ok).toBe(true);
+    expect(validateAttachments([{ filename: "a.gif", mediaType: "image/gif", dataBase64: gif.toString("base64") }]).ok).toBe(true);
+    expect(validateAttachments([{ filename: "a.webp", mediaType: "image/webp", dataBase64: webp.toString("base64") }]).ok).toBe(true);
   });
 
   it("accepts a single PDF document up to MAX_DOCUMENT_BYTES", () => {
