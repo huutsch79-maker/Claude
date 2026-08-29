@@ -5,9 +5,18 @@ import type { AddressInfo } from "node:net";
 import type { DomainId } from "../src/config/domains.js";
 import type { OperationalMetadata } from "../src/orchestrator/operationalMetadata.js";
 import type { ApprovalRequest } from "../src/core/approvalGate.js";
-import { assertDashboardPayloadShape, type DashboardSource, type DashboardStatePayload } from "../src/dashboard/types.js";
+import {
+  assertDashboardPayloadShape,
+  type ChatAttachmentMeta,
+  type ChatHistoryEntry,
+  type ChatRole,
+  type DashboardSource,
+  type DashboardStatePayload,
+} from "../src/dashboard/types.js";
 import { buildDashboardState } from "../src/dashboard/readModel.js";
-import { createDashboardServer, closeServer } from "../src/dashboard/server.js";
+import { createDashboardServer, closeServer, type DashboardServerOptions } from "../src/dashboard/server.js";
+import type { ChatBackend, ChatPriorMessage, ChatReply, ValidatedAttachment } from "../src/dashboard/chat.js";
+import type { AzureCostSummary, DomainContentSummary, MailSummary } from "../src/orchestrator/domainContentSummary.js";
 import * as net from "node:net";
 
 function validMetadata(domain: DomainId): OperationalMetadata {
@@ -20,11 +29,54 @@ function validMetadata(domain: DomainId): OperationalMetadata {
   };
 }
 
+function validMailSummary(overrides: Partial<MailSummary> = {}): MailSummary {
+  return {
+    status: "connected",
+    unreadCount: 3,
+    totalCount: 42,
+    topSenders: [{ displayName: "Alice", messageCount: 5 }],
+    lastSyncedAt: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
+function validAzureCostSummary(overrides: Partial<AzureCostSummary> = {}): AzureCostSummary {
+  return {
+    status: "connected",
+    currency: "USD",
+    monthToDateCost: 123.45,
+    topServices: [{ serviceName: "Storage", cost: 12.3 }],
+    lastSyncedAt: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
+function validContent(domain: DomainId, overrides: Partial<DomainContentSummary> = {}): DomainContentSummary {
+  return {
+    domain,
+    reportedAt: new Date().toISOString(),
+    mail: validMailSummary(),
+    azureCost: domain === "work" ? validAzureCostSummary() : null,
+    ...overrides,
+  };
+}
+
+interface AppendedChatCall {
+  domainId: DomainId;
+  entry: { role: ChatRole; content: string; attachments: ChatAttachmentMeta[] };
+}
+
 function makeFakeSource(opts: {
   domains?: { id: DomainId; label: string }[];
   metadata?: Map<DomainId, OperationalMetadata>;
   pending?: Map<DomainId, Map<string, ApprovalRequest>>;
   snapshotImpl?: () => ReadonlyMap<DomainId, OperationalMetadata>;
+  content?: Map<DomainId, DomainContentSummary>;
+  contentSnapshotImpl?: () => ReadonlyMap<DomainId, DomainContentSummary>;
+  chatHistory?: Map<DomainId, ChatHistoryEntry[]>;
+  appendedChatCalls?: AppendedChatCall[];
+  recentChatHistoryImpl?: (domainId: DomainId, limit?: number) => Promise<ChatHistoryEntry[]>;
+  appendChatMessageImpl?: (domainId: DomainId, entry: { role: ChatRole; content: string; attachments: ChatAttachmentMeta[] }) => Promise<void>;
 } = {}): DashboardSource {
   const domains = opts.domains ?? [
     { id: "work" as DomainId, label: "NZB (work)" },
@@ -32,11 +84,53 @@ function makeFakeSource(opts: {
   ];
   const metadata = opts.metadata ?? new Map<DomainId, OperationalMetadata>();
   const pending = opts.pending ?? new Map<DomainId, Map<string, ApprovalRequest>>();
+  const content = opts.content ?? new Map<DomainId, DomainContentSummary>();
+  const chatHistory = opts.chatHistory ?? new Map<DomainId, ChatHistoryEntry[]>();
   return {
     listDomains: () => domains,
     snapshot: opts.snapshotImpl ?? (() => metadata),
+    contentSnapshot: opts.contentSnapshotImpl ?? (() => content),
     listPending: (domainId: DomainId) => pending.get(domainId) ?? new Map(),
+    appendChatMessage:
+      opts.appendChatMessageImpl ??
+      (async (domainId, entry) => {
+        opts.appendedChatCalls?.push({ domainId, entry });
+        const list = chatHistory.get(domainId) ?? [];
+        list.push({ role: entry.role, content: entry.content, attachments: entry.attachments, createdAt: new Date().toISOString() });
+        chatHistory.set(domainId, list);
+      }),
+    recentChatHistory:
+      opts.recentChatHistoryImpl ??
+      (async (domainId, limit) => {
+        const list = chatHistory.get(domainId) ?? [];
+        return limit ? list.slice(Math.max(0, list.length - limit)) : list;
+      }),
   };
+}
+
+interface FakeChatBackendCall {
+  domainId: DomainId;
+  message: string;
+  attachments: ValidatedAttachment[];
+  priorMessages: ChatPriorMessage[];
+}
+
+function makeFakeChatBackend(
+  opts: { replyText?: string; impl?: ChatBackend["send"] } = {},
+): ChatBackend & { calls: FakeChatBackendCall[] } {
+  const calls: FakeChatBackendCall[] = [];
+  return {
+    calls,
+    async send(domainId, message, attachments, priorMessages): Promise<ChatReply> {
+      calls.push({ domainId, message, attachments, priorMessages });
+      if (opts.impl) return opts.impl(domainId, message, attachments, priorMessages);
+      return { text: opts.replyText ?? "fake reply" };
+    },
+  };
+}
+
+function defaultServerOptions(overrides: Partial<DashboardServerOptions> = {}): DashboardServerOptions {
+  return { healthIntervalMs: 5 * 60 * 1000, chatBackend: makeFakeChatBackend(), ...overrides };
 }
 
 describe("dashboard payload shape", () => {
@@ -147,7 +241,8 @@ describe("dashboard payload shape", () => {
       ["work", new Map([["a1", { domain: "work", summary: "restart foo", kind: "module_add", proposedAt: new Date().toISOString() }]])],
     ]);
     const metadata = new Map<DomainId, OperationalMetadata>([["work", validMetadata("work")]]);
-    const source = makeFakeSource({ domains: [{ id: "work", label: "NZB (work)" }], metadata, pending });
+    const content = new Map<DomainId, DomainContentSummary>([["work", validContent("work")]]);
+    const source = makeFakeSource({ domains: [{ id: "work", label: "NZB (work)" }], metadata, pending, content });
     const payload = buildDashboardState(source, { healthIntervalMs: 5 * 60 * 1000 });
 
     // Round-trip through JSON, exactly as the HTTP layer would serialize it.
@@ -169,6 +264,7 @@ describe("dashboard payload shape", () => {
         "stale",
         "awaitingFirstReport",
         "totalPending",
+        "content",
       ].sort(),
     );
     expect(Object.keys(domainEntry.moduleHealth[0]!).sort()).toEqual(
@@ -179,6 +275,332 @@ describe("dashboard payload shape", () => {
     );
     expect(Object.keys(domainEntry.errorCounts).sort()).toEqual(["transient24h", "fatal24h"].sort());
     expect(Object.keys(domainEntry.approvals[0]!).sort()).toEqual(["id", "kind", "summary", "proposedAt"].sort());
+
+    // content and every nesting level within it, mirroring the health-side assertions above.
+    const contentEntry = domainEntry.content!;
+    expect(Object.keys(contentEntry).sort()).toEqual(["domain", "reportedAt", "mail", "azureCost"].sort());
+    expect(Object.keys(contentEntry.mail).sort()).toEqual(
+      ["status", "unreadCount", "totalCount", "topSenders", "lastSyncedAt"].sort(),
+    );
+    expect(Object.keys(contentEntry.mail.topSenders[0]!).sort()).toEqual(["displayName", "messageCount"].sort());
+    expect(Object.keys(contentEntry.azureCost!).sort()).toEqual(
+      ["status", "currency", "monthToDateCost", "topServices", "lastSyncedAt"].sort(),
+    );
+    expect(Object.keys(contentEntry.azureCost!.topServices[0]!).sort()).toEqual(["serviceName", "cost"].sort());
+  });
+});
+
+describe("domain content payload shape", () => {
+  it("accepts a well-formed content payload built from a real read model", () => {
+    const metadata = new Map<DomainId, OperationalMetadata>([["work", validMetadata("work")]]);
+    const content = new Map<DomainId, DomainContentSummary>([["work", validContent("work")]]);
+    const source = makeFakeSource({ domains: [{ id: "work", label: "NZB (work)" }], metadata, content });
+    const payload = buildDashboardState(source, { healthIntervalMs: 5 * 60 * 1000 });
+    expect(() => assertDashboardPayloadShape(payload)).not.toThrow();
+    expect(payload.domains[0]!.content).not.toBeNull();
+  });
+
+  it("is null, not omitted or undefined, for a domain that has never published a content report", () => {
+    const metadata = new Map<DomainId, OperationalMetadata>([["work", validMetadata("work")]]);
+    const source = makeFakeSource({ domains: [{ id: "work", label: "NZB (work)" }], metadata });
+    const payload = buildDashboardState(source, { healthIntervalMs: 5 * 60 * 1000 });
+    expect(payload.domains[0]!.content).toBeNull();
+    expect(() => assertDashboardPayloadShape(payload)).not.toThrow();
+  });
+
+  it("rejects a poisoned content entry with an extra top-level key", () => {
+    const bad: unknown = {
+      domains: [
+        {
+          domain: "work",
+          reportedAt: new Date().toISOString(),
+          ageMs: 0,
+          stale: false,
+          awaitingFirstReport: false,
+          moduleHealth: [],
+          credentialStatus: [],
+          errorCounts: { transient24h: 0, fatal24h: 0 },
+          approvals: [],
+          totalPending: 0,
+          content: { ...validContent("work"), debugContext: "conversation excerpt" },
+        },
+      ],
+    };
+    expect(() => assertDashboardPayloadShape(bad)).toThrow(/disallowed field/);
+  });
+
+  it("rejects a poisoned mail sub-object (extra field nested inside content.mail)", () => {
+    const bad: unknown = {
+      domains: [
+        {
+          domain: "work",
+          reportedAt: new Date().toISOString(),
+          ageMs: 0,
+          stale: false,
+          awaitingFirstReport: false,
+          moduleHealth: [],
+          credentialStatus: [],
+          errorCounts: { transient24h: 0, fatal24h: 0 },
+          approvals: [],
+          totalPending: 0,
+          content: { ...validContent("work"), mail: { ...validMailSummary(), rawSubjectLine: "leaked email subject" } },
+        },
+      ],
+    };
+    expect(() => assertDashboardPayloadShape(bad)).toThrow(/disallowed field/);
+  });
+
+  it("rejects a poisoned azureCost sub-object (extra field nested inside content.azureCost)", () => {
+    const bad: unknown = {
+      domains: [
+        {
+          domain: "work",
+          reportedAt: new Date().toISOString(),
+          ageMs: 0,
+          stale: false,
+          awaitingFirstReport: false,
+          moduleHealth: [],
+          credentialStatus: [],
+          errorCounts: { transient24h: 0, fatal24h: 0 },
+          approvals: [],
+          totalPending: 0,
+          content: { ...validContent("work"), azureCost: { ...validAzureCostSummary(), invoiceId: "leaked billing id" } },
+        },
+      ],
+    };
+    expect(() => assertDashboardPayloadShape(bad)).toThrow(/disallowed field/);
+  });
+
+  it("rejects a poisoned topSenders entry (nested two levels down inside content.mail)", () => {
+    const bad: unknown = {
+      domains: [
+        {
+          domain: "work",
+          reportedAt: new Date().toISOString(),
+          ageMs: 0,
+          stale: false,
+          awaitingFirstReport: false,
+          moduleHealth: [],
+          credentialStatus: [],
+          errorCounts: { transient24h: 0, fatal24h: 0 },
+          approvals: [],
+          totalPending: 0,
+          content: {
+            ...validContent("work"),
+            mail: { ...validMailSummary(), topSenders: [{ displayName: "Alice", messageCount: 5, emailAddress: "alice@leaked.example" }] },
+          },
+        },
+      ],
+    };
+    expect(() => assertDashboardPayloadShape(bad)).toThrow(/disallowed field/);
+  });
+
+  it("rejects a poisoned topServices entry (nested two levels down inside content.azureCost)", () => {
+    const bad: unknown = {
+      domains: [
+        {
+          domain: "work",
+          reportedAt: new Date().toISOString(),
+          ageMs: 0,
+          stale: false,
+          awaitingFirstReport: false,
+          moduleHealth: [],
+          credentialStatus: [],
+          errorCounts: { transient24h: 0, fatal24h: 0 },
+          approvals: [],
+          totalPending: 0,
+          content: {
+            ...validContent("work"),
+            azureCost: { ...validAzureCostSummary(), topServices: [{ serviceName: "Storage", cost: 12.3, resourceGroup: "leaked-rg" }] },
+          },
+        },
+      ],
+    };
+    expect(() => assertDashboardPayloadShape(bad)).toThrow(/disallowed field/);
+  });
+
+  it("rejects a mail.status value outside the known enum", () => {
+    const bad: unknown = {
+      domains: [
+        {
+          domain: "work",
+          reportedAt: new Date().toISOString(),
+          ageMs: 0,
+          stale: false,
+          awaitingFirstReport: false,
+          moduleHealth: [],
+          credentialStatus: [],
+          errorCounts: { transient24h: 0, fatal24h: 0 },
+          approvals: [],
+          totalPending: 0,
+          content: { ...validContent("work"), mail: { ...validMailSummary(), status: "definitely-not-real" } },
+        },
+      ],
+    };
+    expect(() => assertDashboardPayloadShape(bad)).toThrow(/status must be one of/);
+  });
+
+  it("rejects a mail.topSenders entry carrying an object instead of a string displayName (leaked-value-through-allowed-key repro)", () => {
+    const bad: unknown = {
+      domains: [
+        {
+          domain: "work",
+          reportedAt: new Date().toISOString(),
+          ageMs: 0,
+          stale: false,
+          awaitingFirstReport: false,
+          moduleHealth: [],
+          credentialStatus: [],
+          errorCounts: { transient24h: 0, fatal24h: 0 },
+          approvals: [],
+          totalPending: 0,
+          content: {
+            ...validContent("work"),
+            mail: { ...validMailSummary(), topSenders: [{ displayName: { leaked: "excerpt" }, messageCount: 5 }] },
+          },
+        },
+      ],
+    };
+    expect(() => assertDashboardPayloadShape(bad)).toThrow(/displayName must be a string/);
+  });
+
+  it("rejects NaN/Infinity in content numeric fields even though typeof would pass", () => {
+    const baseDomain = {
+      domain: "work",
+      reportedAt: new Date().toISOString(),
+      ageMs: 0,
+      stale: false,
+      awaitingFirstReport: false,
+      moduleHealth: [],
+      credentialStatus: [],
+      errorCounts: { transient24h: 0, fatal24h: 0 },
+      approvals: [],
+      totalPending: 0,
+    };
+    expect(() =>
+      assertDashboardPayloadShape({
+        domains: [{ ...baseDomain, content: { ...validContent("work"), mail: { ...validMailSummary(), unreadCount: NaN } } }],
+      }),
+    ).toThrow(/unreadCount must be a finite number/);
+    expect(() =>
+      assertDashboardPayloadShape({
+        domains: [
+          {
+            ...baseDomain,
+            content: { ...validContent("work"), azureCost: { ...validAzureCostSummary(), monthToDateCost: Infinity } },
+          },
+        ],
+      }),
+    ).toThrow(/monthToDateCost must be a finite number or null/);
+  });
+
+  it("azureCost is accepted as null (the personal-domain shape) and mail.topSenders/azureCost.topServices arrays over the cap are rejected", () => {
+    const okNullAzure: unknown = {
+      domains: [
+        {
+          domain: "personal",
+          reportedAt: new Date().toISOString(),
+          ageMs: 0,
+          stale: false,
+          awaitingFirstReport: false,
+          moduleHealth: [],
+          credentialStatus: [],
+          errorCounts: { transient24h: 0, fatal24h: 0 },
+          approvals: [],
+          totalPending: 0,
+          content: validContent("personal"),
+        },
+      ],
+    };
+    expect(() => assertDashboardPayloadShape(okNullAzure)).not.toThrow();
+
+    const tooManySenders = Array.from({ length: 6 }, (_, i) => ({ displayName: `sender-${i}`, messageCount: i }));
+    const overCap: unknown = {
+      domains: [
+        {
+          domain: "work",
+          reportedAt: new Date().toISOString(),
+          ageMs: 0,
+          stale: false,
+          awaitingFirstReport: false,
+          moduleHealth: [],
+          credentialStatus: [],
+          errorCounts: { transient24h: 0, fatal24h: 0 },
+          approvals: [],
+          totalPending: 0,
+          content: { ...validContent("work"), mail: { ...validMailSummary(), topSenders: tooManySenders } },
+        },
+      ],
+    };
+    expect(() => assertDashboardPayloadShape(overCap)).toThrow(/at most 5 entries/);
+  });
+});
+
+describe("domain content separation", () => {
+  it("keeps work and personal content summaries as separate entries, never merged (mail/Azure cross-leak repro)", () => {
+    const metadata = new Map<DomainId, OperationalMetadata>([
+      ["work", validMetadata("work")],
+      ["personal", validMetadata("personal")],
+    ]);
+    const workContent = validContent("work", {
+      mail: validMailSummary({ unreadCount: 11, topSenders: [{ displayName: "work-only-sender@corp.example", messageCount: 9 }] }),
+      azureCost: validAzureCostSummary({ monthToDateCost: 999.99 }),
+    });
+    const personalContent = validContent("personal", {
+      mail: validMailSummary({ unreadCount: 2, topSenders: [{ displayName: "personal-only-sender@home.example", messageCount: 1 }] }),
+    });
+    const content = new Map<DomainId, DomainContentSummary>([
+      ["work", workContent],
+      ["personal", personalContent],
+    ]);
+    const source = makeFakeSource({ metadata, content });
+    const payload = buildDashboardState(source, { healthIntervalMs: 5 * 60 * 1000 });
+
+    const work = payload.domains.find((d) => d.domain === "work")!;
+    const personal = payload.domains.find((d) => d.domain === "personal")!;
+
+    // The personal domain must never carry Azure cost data, by construction.
+    expect(personal.content!.azureCost).toBeNull();
+    expect(work.content!.azureCost).not.toBeNull();
+
+    // Neither domain's mail sender names appear on the other domain's entry.
+    const workSenderNames = work.content!.mail.topSenders.map((s) => s.displayName);
+    const personalSenderNames = personal.content!.mail.topSenders.map((s) => s.displayName);
+    expect(workSenderNames).toContain("work-only-sender@corp.example");
+    expect(workSenderNames).not.toContain("personal-only-sender@home.example");
+    expect(personalSenderNames).toContain("personal-only-sender@home.example");
+    expect(personalSenderNames).not.toContain("work-only-sender@corp.example");
+    expect(work.content!.mail.unreadCount).not.toBe(personal.content!.mail.unreadCount);
+    expect(() => assertDashboardPayloadShape(payload)).not.toThrow();
+  });
+
+  it("content freshness downgrades a stale connected sub-summary to stale without mutating the source object", () => {
+    const metadata = new Map<DomainId, OperationalMetadata>([["work", validMetadata("work")]]);
+    const staleContent = validContent("work", { reportedAt: new Date(Date.now() - 60 * 60 * 1000).toISOString() }); // 1h old
+    const content = new Map<DomainId, DomainContentSummary>([["work", staleContent]]);
+    const source = makeFakeSource({ domains: [{ id: "work", label: "NZB (work)" }], metadata, content });
+    const payload = buildDashboardState(source, { healthIntervalMs: 5 * 60 * 1000 }); // stale threshold: 10 min
+
+    expect(payload.domains[0]!.content!.mail.status).toBe("stale");
+    expect(payload.domains[0]!.content!.azureCost!.status).toBe("stale");
+    // Original object handed in by the source is untouched.
+    expect(staleContent.mail.status).toBe("connected");
+    expect(staleContent.azureCost!.status).toBe("connected");
+  });
+
+  it("content freshness leaves not_configured/error sub-summaries alone even when stale", () => {
+    const metadata = new Map<DomainId, OperationalMetadata>([["work", validMetadata("work")]]);
+    const oldNotConfigured = validContent("work", {
+      reportedAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+      mail: validMailSummary({ status: "not_configured" }),
+      azureCost: validAzureCostSummary({ status: "error" }),
+    });
+    const content = new Map<DomainId, DomainContentSummary>([["work", oldNotConfigured]]);
+    const source = makeFakeSource({ domains: [{ id: "work", label: "NZB (work)" }], metadata, content });
+    const payload = buildDashboardState(source, { healthIntervalMs: 5 * 60 * 1000 });
+
+    expect(payload.domains[0]!.content!.mail.status).toBe("not_configured");
+    expect(payload.domains[0]!.content!.azureCost!.status).toBe("error");
   });
 });
 
@@ -298,6 +720,7 @@ describe("dashboard structural isolation (static analysis)", () => {
     "relationsStore.js",
     "credentialStore.js",
     "capabilityRegistry.js",
+    "chatHistoryStore.js",
     "db.js",
     "createDomainPool",
     'from "pg"',
@@ -309,6 +732,10 @@ describe("dashboard structural isolation (static analysis)", () => {
 
   it("finds the expected dashboard source files", () => {
     expect(files.length).toBeGreaterThan(0);
+  });
+
+  it("the directory glob picks up the new chat.ts file automatically — not hand-listed, so it can't be forgotten", () => {
+    expect(files).toContain("chat.ts");
   });
 
   for (const file of files) {
@@ -325,8 +752,9 @@ describe("dashboard HTTP server", () => {
   async function withServer<T>(
     source: DashboardSource,
     fn: (baseUrl: string) => Promise<T>,
+    serverOpts: Partial<DashboardServerOptions> = {},
   ): Promise<T> {
-    const server = createDashboardServer(source, { healthIntervalMs: 5 * 60 * 1000 });
+    const server = createDashboardServer(source, defaultServerOptions(serverOpts));
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const { port } = server.address() as AddressInfo;
     const baseUrl = `http://127.0.0.1:${port}`;
@@ -447,7 +875,7 @@ describe("dashboard HTTP server", () => {
 
   it("closeServer resolves within its grace period even with a stalled mid-request connection (Tester HIGH #3 repro)", async () => {
     const source = makeFakeSource();
-    const server = createDashboardServer(source, { healthIntervalMs: 5 * 60 * 1000 });
+    const server = createDashboardServer(source, defaultServerOptions());
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const { port } = server.address() as AddressInfo;
 
@@ -468,5 +896,285 @@ describe("dashboard HTTP server", () => {
     // (flaky-CI headroom) but nowhere near "never".
     expect(elapsed).toBeLessThan(GRACE_MS + 2000);
     socket.destroy();
+  });
+});
+
+describe("dashboard HTTP server: chat route", () => {
+  async function withServer<T>(
+    source: DashboardSource,
+    fn: (baseUrl: string) => Promise<T>,
+    serverOpts: Partial<DashboardServerOptions> = {},
+  ): Promise<T> {
+    const server = createDashboardServer(source, defaultServerOptions(serverOpts));
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address() as AddressInfo;
+    const baseUrl = `http://127.0.0.1:${port}`;
+    try {
+      return await fn(baseUrl);
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+    }
+  }
+
+  function postChat(baseUrl: string, domain: string, body: unknown): Promise<Response> {
+    return fetch(`${baseUrl}/api/chat/${domain}`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-jarvis-dashboard": "1" },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it("POST to an unknown domain returns 404 and never calls the chat backend", async () => {
+    const backend = makeFakeChatBackend();
+    const source = makeFakeSource();
+    await withServer(
+      source,
+      async (baseUrl) => {
+        const res = await postChat(baseUrl, "not-a-real-domain", { message: "hi" });
+        expect(res.status).toBe(404);
+        expect(backend.calls).toHaveLength(0);
+      },
+      { chatBackend: backend },
+    );
+  });
+
+  it("rejects an oversized image attachment before the backend is ever called (Tester attachment-boundary repro)", async () => {
+    const backend = makeFakeChatBackend();
+    const appendedChatCalls: AppendedChatCall[] = [];
+    const source = makeFakeSource({ appendedChatCalls });
+    const oversized = Buffer.alloc(5 * 1024 * 1024 + 1, 1).toString("base64"); // > MAX_IMAGE_BYTES (5MB)
+    await withServer(
+      source,
+      async (baseUrl) => {
+        const res = await postChat(baseUrl, "work", {
+          message: "look at this",
+          attachments: [{ filename: "big.png", mediaType: "image/png", dataBase64: oversized }],
+        });
+        expect(res.status).toBe(400);
+        const body = (await res.json()) as { error: string };
+        expect(body.error).toMatch(/too large/);
+        expect(backend.calls).toHaveLength(0);
+        expect(appendedChatCalls).toHaveLength(0);
+      },
+      { chatBackend: backend },
+    );
+  });
+
+  it("rejects an unsupported attachment media type before the backend is ever called", async () => {
+    const backend = makeFakeChatBackend();
+    const appendedChatCalls: AppendedChatCall[] = [];
+    const source = makeFakeSource({ appendedChatCalls });
+    await withServer(
+      source,
+      async (baseUrl) => {
+        const res = await postChat(baseUrl, "work", {
+          message: "run this",
+          attachments: [{ filename: "script.exe", mediaType: "application/x-msdownload", dataBase64: Buffer.from("x").toString("base64") }],
+        });
+        expect(res.status).toBe(400);
+        const body = (await res.json()) as { error: string };
+        expect(body.error).toMatch(/unsupported file type/);
+        expect(backend.calls).toHaveLength(0);
+        expect(appendedChatCalls).toHaveLength(0);
+      },
+      { chatBackend: backend },
+    );
+  });
+
+  it("a normal turn round-trips: persists the user turn, calls the backend once, persists and returns the reply", async () => {
+    const backend = makeFakeChatBackend({ replyText: "here is my answer" });
+    const appendedChatCalls: AppendedChatCall[] = [];
+    const source = makeFakeSource({ appendedChatCalls });
+    await withServer(
+      source,
+      async (baseUrl) => {
+        const res = await postChat(baseUrl, "work", { message: "how many unread emails?" });
+        expect(res.status).toBe(200);
+        const body = (await res.json()) as { reply: { text: string; createdAt: string } };
+        expect(body.reply.text).toBe("here is my answer");
+        expect(typeof body.reply.createdAt).toBe("string");
+
+        expect(backend.calls).toHaveLength(1);
+        expect(backend.calls[0]!.domainId).toBe("work");
+        expect(backend.calls[0]!.message).toBe("how many unread emails?");
+        expect(backend.calls[0]!.attachments).toEqual([]);
+
+        expect(appendedChatCalls).toHaveLength(2);
+        expect(appendedChatCalls[0]!.entry.role).toBe("user");
+        expect(appendedChatCalls[0]!.entry.content).toBe("how many unread emails?");
+        expect(appendedChatCalls[1]!.entry.role).toBe("assistant");
+        expect(appendedChatCalls[1]!.entry.content).toBe("here is my answer");
+      },
+      { chatBackend: backend },
+    );
+  });
+
+  it("persists attachment METADATA only — filename/mediaType/sizeBytes — never the raw base64 bytes, on the exact append call", async () => {
+    const backend = makeFakeChatBackend();
+    const appendedChatCalls: AppendedChatCall[] = [];
+    const source = makeFakeSource({ appendedChatCalls });
+    const imageBytes = Buffer.from("not a real png but small", "utf8");
+    const dataBase64 = imageBytes.toString("base64");
+    await withServer(
+      source,
+      async (baseUrl) => {
+        const res = await postChat(baseUrl, "work", {
+          message: "what is this",
+          attachments: [{ filename: "photo.png", mediaType: "image/png", dataBase64 }],
+        });
+        expect(res.status).toBe(200);
+
+        // The backend DOES receive real decoded bytes (it needs them to call the model)...
+        expect(backend.calls[0]!.attachments).toHaveLength(1);
+        expect(backend.calls[0]!.attachments[0]!.data.equals(imageBytes)).toBe(true);
+
+        // ...but the persisted call — what actually reaches storage — carries
+        // only the whitelisted metadata shape, asserted on the exact params.
+        const userAppend = appendedChatCalls[0]!;
+        expect(userAppend.entry.attachments).toEqual([{ filename: "photo.png", mediaType: "image/png", sizeBytes: imageBytes.length }]);
+        for (const att of userAppend.entry.attachments as unknown as Record<string, unknown>[]) {
+          expect(Object.keys(att).sort()).toEqual(["filename", "mediaType", "sizeBytes"].sort());
+          expect(JSON.stringify(att)).not.toContain(dataBase64);
+        }
+      },
+      { chatBackend: backend },
+    );
+  });
+
+  it("passes prior chat history to the backend as replay context, oldest-first", async () => {
+    const backend = makeFakeChatBackend();
+    const chatHistory = new Map<DomainId, ChatHistoryEntry[]>([
+      [
+        "work",
+        [
+          { role: "user", content: "first message", attachments: [], createdAt: new Date(Date.now() - 2000).toISOString() },
+          { role: "assistant", content: "first reply", attachments: [], createdAt: new Date(Date.now() - 1000).toISOString() },
+        ],
+      ],
+    ]);
+    const source = makeFakeSource({ chatHistory });
+    await withServer(
+      source,
+      async (baseUrl) => {
+        await postChat(baseUrl, "work", { message: "second message" });
+        expect(backend.calls[0]!.priorMessages).toEqual([
+          { role: "user", content: "first message" },
+          { role: "assistant", content: "first reply" },
+        ]);
+      },
+      { chatBackend: backend },
+    );
+  });
+
+  it("rejects an empty/missing message with 400 before the backend is called", async () => {
+    const backend = makeFakeChatBackend();
+    const source = makeFakeSource();
+    await withServer(
+      source,
+      async (baseUrl) => {
+        const res1 = await postChat(baseUrl, "work", { message: "" });
+        expect(res1.status).toBe(400);
+        const res2 = await postChat(baseUrl, "work", {});
+        expect(res2.status).toBe(400);
+        expect(backend.calls).toHaveLength(0);
+      },
+      { chatBackend: backend },
+    );
+  });
+
+  it("wrong method on the chat send route returns 405", async () => {
+    const source = makeFakeSource();
+    await withServer(source, async (baseUrl) => {
+      const res = await fetch(`${baseUrl}/api/chat/work`, { method: "GET" });
+      expect(res.status).toBe(405);
+    });
+  });
+
+  it("POST to the chat route without the X-Jarvis-Dashboard header returns 403", async () => {
+    const source = makeFakeSource();
+    await withServer(source, async (baseUrl) => {
+      const res = await fetch(`${baseUrl}/api/chat/work`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ message: "hi" }),
+      });
+      expect(res.status).toBe(403);
+    });
+  });
+});
+
+describe("dashboard HTTP server: chat history route", () => {
+  async function withServer<T>(
+    source: DashboardSource,
+    fn: (baseUrl: string) => Promise<T>,
+  ): Promise<T> {
+    const server = createDashboardServer(source, defaultServerOptions());
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address() as AddressInfo;
+    const baseUrl = `http://127.0.0.1:${port}`;
+    try {
+      return await fn(baseUrl);
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+    }
+  }
+
+  it("GET /api/chat/:domain/history round-trips previously appended messages", async () => {
+    const chatHistory = new Map<DomainId, ChatHistoryEntry[]>([
+      [
+        "work",
+        [
+          { role: "user", content: "hello", attachments: [], createdAt: new Date(Date.now() - 1000).toISOString() },
+          {
+            role: "assistant",
+            content: "hi there",
+            attachments: [{ filename: "note.txt", mediaType: "text/plain", sizeBytes: 12 }],
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      ],
+    ]);
+    const source = makeFakeSource({ chatHistory });
+    await withServer(source, async (baseUrl) => {
+      const res = await fetch(`${baseUrl}/api/chat/work/history`);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { messages: ChatHistoryEntry[] };
+      expect(body.messages).toHaveLength(2);
+      expect(body.messages[0]!.content).toBe("hello");
+      expect(body.messages[1]!.content).toBe("hi there");
+      expect(body.messages[1]!.attachments).toEqual([{ filename: "note.txt", mediaType: "text/plain", sizeBytes: 12 }]);
+    });
+  });
+
+  it("GET history for an unknown domain returns 404", async () => {
+    const source = makeFakeSource();
+    await withServer(source, async (baseUrl) => {
+      const res = await fetch(`${baseUrl}/api/chat/not-a-real-domain/history`);
+      expect(res.status).toBe(404);
+    });
+  });
+
+  it("work and personal chat histories never leak into each other over HTTP", async () => {
+    const chatHistory = new Map<DomainId, ChatHistoryEntry[]>([
+      ["work", [{ role: "user", content: "work-only secret content", attachments: [], createdAt: new Date().toISOString() }]],
+      ["personal", [{ role: "user", content: "personal-only secret content", attachments: [], createdAt: new Date().toISOString() }]],
+    ]);
+    const source = makeFakeSource({ chatHistory });
+    await withServer(source, async (baseUrl) => {
+      const workRes = await fetch(`${baseUrl}/api/chat/work/history`);
+      const personalRes = await fetch(`${baseUrl}/api/chat/personal/history`);
+      const workBody = (await workRes.json()) as { messages: ChatHistoryEntry[] };
+      const personalBody = (await personalRes.json()) as { messages: ChatHistoryEntry[] };
+      expect(workBody.messages.map((m) => m.content)).toEqual(["work-only secret content"]);
+      expect(personalBody.messages.map((m) => m.content)).toEqual(["personal-only secret content"]);
+    });
+  });
+
+  it("wrong method on the chat history route returns 405", async () => {
+    const source = makeFakeSource();
+    await withServer(source, async (baseUrl) => {
+      const res = await fetch(`${baseUrl}/api/chat/work/history`, { method: "POST", headers: { "x-jarvis-dashboard": "1" } });
+      expect(res.status).toBe(405);
+    });
   });
 });

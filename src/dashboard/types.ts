@@ -6,21 +6,52 @@ import type {
   OperationalMetadata,
 } from "../orchestrator/operationalMetadata.js";
 import type { ApprovalRequest } from "../core/approvalGate.js";
+import {
+  CONTENT_STATUSES,
+  MAX_DISPLAY_NAME_LEN,
+  MAX_TOP_SENDERS,
+  MAX_TOP_SERVICES,
+  type DomainContentSummary,
+} from "../orchestrator/domainContentSummary.js";
+
+/** Local to the dashboard layer — deliberately NOT imported from src/domain/chatHistoryStore.ts (a domain-internal store); mirrors its shape. */
+export type ChatRole = "user" | "assistant";
+
+/** Metadata only — never raw bytes, never file content/URI. Mirrors db/schema.sql's chat_history.attachments column. */
+export interface ChatAttachmentMeta {
+  filename: string;
+  mediaType: string;
+  sizeBytes: number;
+}
+
+export interface ChatHistoryEntry {
+  role: ChatRole;
+  content: string;
+  attachments: ChatAttachmentMeta[];
+  createdAt: string;
+}
 
 /**
- * The narrow read-only interface the dashboard is built against. Nothing in
+ * The narrow interface the dashboard is built against. Nothing in
  * src/dashboard/** ever sees a DomainInstance, a Pool, or any domain-internal
- * store — only what this interface exposes, which is exactly the same two
- * in-memory objects the orchestrator layer already legitimately holds
- * (OperationalBus.snapshot() and each domain's ApprovalGate.listPending()).
+ * store — only what this interface exposes: OperationalBus.snapshot(),
+ * ContentBus.snapshot() (both whitelisted, shape-asserted channels), each
+ * domain's ApprovalGate.listPending(), and chat history reached only through
+ * appendChatMessage/recentChatHistory below (metadata-only attachments,
+ * never raw bytes).
  *
- * resolve()/approve()/reject() are deliberately absent — that's Phase 2/3,
- * not needed for a read-only Phase 1, and adding it now would be speculative.
+ * This interface is NOT read-only — appendChatMessage persists a chat turn,
+ * a deliberate, narrow, whitelisted write path added for the chat feature.
+ * approve()/reject() on approvals are still absent — that remains
+ * speculative, out of scope for this pass.
  */
 export interface DashboardSource {
   listDomains(): { id: DomainId; label: string }[];
   snapshot(): ReadonlyMap<DomainId, OperationalMetadata>;
+  contentSnapshot(): ReadonlyMap<DomainId, DomainContentSummary>;
   listPending(domainId: DomainId): ReadonlyMap<string, ApprovalRequest>;
+  appendChatMessage(domainId: DomainId, entry: { role: ChatRole; content: string; attachments: ChatAttachmentMeta[] }): Promise<void>;
+  recentChatHistory(domainId: DomainId, limit?: number): Promise<ChatHistoryEntry[]>;
 }
 
 /** One pending approval as rendered to the dashboard. */
@@ -52,6 +83,8 @@ export interface DomainStatePayload {
   approvals: ApprovalSummary[];
   /** True count of pending approvals for this domain, even when `approvals` above was truncated. */
   totalPending: number;
+  /** Mail/Azure-cost content summary, or null if this domain has never published one yet (see contentSnapshot()). */
+  content: DomainContentSummary | null;
 }
 
 /** The full body of GET /api/state. */
@@ -74,8 +107,14 @@ const DOMAIN_STATE_KEYS = new Set([
   "errorCounts",
   "approvals",
   "totalPending",
+  "content",
 ]);
 const TOP_LEVEL_KEYS = new Set(["domains"]);
+const CONTENT_KEYS = new Set(["domain", "reportedAt", "mail", "azureCost"]);
+const MAIL_SUMMARY_KEYS = new Set(["status", "unreadCount", "totalCount", "topSenders", "lastSyncedAt"]);
+const AZURE_COST_KEYS = new Set(["status", "currency", "monthToDateCost", "topServices", "lastSyncedAt"]);
+const TOP_SENDER_KEYS = new Set(["displayName", "messageCount"]);
+const TOP_SERVICE_KEYS = new Set(["serviceName", "cost"]);
 
 // Value-level whitelists — key-name checks alone (assertOnlyKeys) let an
 // allowed key carry an arbitrary/leaked value straight through to the wire.
@@ -153,6 +192,71 @@ export function assertDashboardPayloadShape(value: unknown): asserts value is Da
     }
 
     assertFiniteNumber(d.totalPending, "dashboard payload domain entry: totalPending");
+
+    if (d.content !== null) {
+      assertDomainContentPayloadShape(d.content);
+    }
+  }
+}
+
+/**
+ * Rejects a poisoned domain-content payload at every nesting level, mirroring
+ * assertDashboardPayloadShape above and assertDomainContentSummaryShape in
+ * domainContentSummary.ts. Kept as its own re-check here (rather than just
+ * trusting the orchestrator-layer assert) as defense in depth for the wire
+ * payload specifically, exactly like the rest of this file already does for
+ * health/approval fields.
+ */
+function assertDomainContentPayloadShape(value: unknown): void {
+  assertOnlyKeys(value, CONTENT_KEYS, "dashboard payload domain content");
+  const c = value as Record<string, unknown>;
+  assertString(c.domain, "dashboard payload domain content: domain");
+  assertString(c.reportedAt, "dashboard payload domain content: reportedAt");
+
+  assertOnlyKeys(c.mail, MAIL_SUMMARY_KEYS, "dashboard payload domain content: mail");
+  const mail = c.mail as Record<string, unknown>;
+  assertEnum(mail.status, CONTENT_STATUSES, "dashboard payload domain content: mail.status");
+  assertFiniteNumber(mail.unreadCount, "dashboard payload domain content: mail.unreadCount");
+  assertFiniteNumber(mail.totalCount, "dashboard payload domain content: mail.totalCount");
+  if (!Array.isArray(mail.topSenders)) {
+    throw new Error("dashboard payload domain content: mail.topSenders must be an array");
+  }
+  if (mail.topSenders.length > MAX_TOP_SENDERS) {
+    throw new Error(`dashboard payload domain content: mail.topSenders must have at most ${MAX_TOP_SENDERS} entries`);
+  }
+  for (const s of mail.topSenders) {
+    assertOnlyKeys(s, TOP_SENDER_KEYS, "dashboard payload domain content: mail.topSenders entry");
+    const entry = s as Record<string, unknown>;
+    assertString(entry.displayName, "dashboard payload domain content: mail.topSenders entry displayName");
+    if ((entry.displayName as string).length > MAX_DISPLAY_NAME_LEN) {
+      throw new Error(`dashboard payload domain content: mail.topSenders entry displayName exceeds ${MAX_DISPLAY_NAME_LEN} chars`);
+    }
+    assertFiniteNumber(entry.messageCount, "dashboard payload domain content: mail.topSenders entry messageCount");
+  }
+  assertStringOrNull(mail.lastSyncedAt, "dashboard payload domain content: mail.lastSyncedAt");
+
+  if (c.azureCost !== null) {
+    assertOnlyKeys(c.azureCost, AZURE_COST_KEYS, "dashboard payload domain content: azureCost");
+    const azureCost = c.azureCost as Record<string, unknown>;
+    assertEnum(azureCost.status, CONTENT_STATUSES, "dashboard payload domain content: azureCost.status");
+    assertString(azureCost.currency, "dashboard payload domain content: azureCost.currency");
+    assertFiniteNumberOrNull(azureCost.monthToDateCost, "dashboard payload domain content: azureCost.monthToDateCost");
+    if (!Array.isArray(azureCost.topServices)) {
+      throw new Error("dashboard payload domain content: azureCost.topServices must be an array");
+    }
+    if (azureCost.topServices.length > MAX_TOP_SERVICES) {
+      throw new Error(`dashboard payload domain content: azureCost.topServices must have at most ${MAX_TOP_SERVICES} entries`);
+    }
+    for (const s of azureCost.topServices) {
+      assertOnlyKeys(s, TOP_SERVICE_KEYS, "dashboard payload domain content: azureCost.topServices entry");
+      const entry = s as Record<string, unknown>;
+      assertString(entry.serviceName, "dashboard payload domain content: azureCost.topServices entry serviceName");
+      if ((entry.serviceName as string).length > MAX_DISPLAY_NAME_LEN) {
+        throw new Error(`dashboard payload domain content: azureCost.topServices entry serviceName exceeds ${MAX_DISPLAY_NAME_LEN} chars`);
+      }
+      assertFiniteNumber(entry.cost, "dashboard payload domain content: azureCost.topServices entry cost");
+    }
+    assertStringOrNull(azureCost.lastSyncedAt, "dashboard payload domain content: azureCost.lastSyncedAt");
   }
 }
 

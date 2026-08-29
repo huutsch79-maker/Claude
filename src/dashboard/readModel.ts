@@ -1,5 +1,6 @@
 import type { DomainId } from "../config/domains.js";
 import type { CredentialStatusSummary, OperationalMetadata } from "../orchestrator/operationalMetadata.js";
+import type { DomainContentSummary } from "../orchestrator/domainContentSummary.js";
 import type {
   ApprovalSummary,
   DashboardSource,
@@ -15,6 +16,12 @@ import type {
 export interface ReadModelOptions {
   /** Read from process.env.JARVIS_HEALTH_INTERVAL_MS by the caller (server.ts), not here. */
   healthIntervalMs: number;
+  /**
+   * Read from process.env.JARVIS_CONTENT_INTERVAL_MS by the caller, not
+   * here. Optional so existing callers/tests that don't care about content
+   * freshness don't need to update — defaults to the health interval.
+   */
+  contentIntervalMs?: number;
   /** Injectable for tests; defaults to the real current time. */
   now?: () => Date;
 }
@@ -40,8 +47,14 @@ export const APPROVAL_DISPLAY_LIMIT = 500;
 export function buildDashboardState(source: DashboardSource, opts: ReadModelOptions): DashboardStatePayload {
   const now = (opts.now ?? (() => new Date()))();
   const snapshot = source.snapshot();
+  const contentSnapshot = source.contentSnapshot();
+  const contentIntervalMs = opts.contentIntervalMs ?? opts.healthIntervalMs;
 
-  const domains = source.listDomains().map(({ id }) => buildDomainState(source, id, snapshot.get(id), now, opts.healthIntervalMs));
+  const domains = source
+    .listDomains()
+    .map(({ id }) =>
+      buildDomainState(source, id, snapshot.get(id), contentSnapshot.get(id), now, opts.healthIntervalMs, contentIntervalMs),
+    );
 
   return { domains };
 }
@@ -50,10 +63,13 @@ function buildDomainState(
   source: DashboardSource,
   domainId: DomainId,
   metadata: OperationalMetadata | undefined,
+  content: DomainContentSummary | undefined,
   now: Date,
   healthIntervalMs: number,
+  contentIntervalMs: number,
 ): DomainStatePayload {
   const { approvals, totalPending } = buildApprovals(source, domainId);
+  const contentPayload = content ? applyContentFreshness(content, now, contentIntervalMs) : null;
 
   if (!metadata) {
     return {
@@ -67,6 +83,7 @@ function buildDomainState(
       errorCounts: { transient24h: 0, fatal24h: 0 },
       approvals,
       totalPending,
+      content: contentPayload,
     };
   }
 
@@ -87,6 +104,7 @@ function buildDomainState(
       errorCounts: metadata.errorCounts,
       approvals,
       totalPending,
+      content: contentPayload,
     };
   }
 
@@ -105,6 +123,31 @@ function buildDomainState(
     errorCounts: metadata.errorCounts,
     approvals,
     totalPending,
+    content: contentPayload,
+  };
+}
+
+/**
+ * Content freshness is computed here rather than carried on the summary
+ * itself: reportContentSummary() only knows about the moment it ran, not
+ * how old that report is by the time a client polls. When the whole content
+ * report is older than 2x the content interval (same staleness rule health
+ * uses), any sub-summary currently "connected" is downgraded to "stale" —
+ * "not_configured"/"error" are left alone since those aren't about
+ * freshness. Never mutates the input.
+ */
+function applyContentFreshness(content: DomainContentSummary, now: Date, contentIntervalMs: number): DomainContentSummary {
+  const ageMs = now.getTime() - new Date(content.reportedAt).getTime();
+  const stale = Number.isFinite(ageMs) && ageMs > 2 * contentIntervalMs;
+  if (!stale) return content;
+
+  return {
+    ...content,
+    mail: content.mail.status === "connected" ? { ...content.mail, status: "stale" } : content.mail,
+    azureCost:
+      content.azureCost && content.azureCost.status === "connected"
+        ? { ...content.azureCost, status: "stale" }
+        : content.azureCost,
   };
 }
 

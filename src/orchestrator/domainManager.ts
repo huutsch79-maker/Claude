@@ -1,11 +1,13 @@
 import { DOMAINS, type DomainId } from "../config/domains.js";
 import { DomainInstance } from "../domain/Domain.js";
 import { OperationalBus } from "./operationalBus.js";
+import { ContentBus } from "./contentBus.js";
 import { Scheduler } from "./scheduler.js";
 import type { ErrorLogCounts } from "../core/reviewer.js";
 
 const REVIEWER_INTERVAL_MS = Number(process.env.JARVIS_REVIEWER_INTERVAL_MS ?? 30 * 60 * 1000); // 30 min default
 const HEALTH_REPORT_INTERVAL_MS = Number(process.env.JARVIS_HEALTH_INTERVAL_MS ?? 5 * 60 * 1000); // 5 min default
+const CONTENT_REPORT_INTERVAL_MS = Number(process.env.JARVIS_CONTENT_INTERVAL_MS ?? 15 * 60 * 1000); // 15 min default
 
 /**
  * Owns one DomainInstance per configured domain and the single shared
@@ -16,6 +18,7 @@ const HEALTH_REPORT_INTERVAL_MS = Number(process.env.JARVIS_HEALTH_INTERVAL_MS ?
  */
 export class DomainManager {
   readonly bus = new OperationalBus();
+  readonly contentBus = new ContentBus();
   private readonly domains = new Map<DomainId, DomainInstance>();
   private readonly scheduler = new Scheduler();
 
@@ -52,6 +55,18 @@ export class DomainManager {
         },
         (err) => console.error(`[${domain.config.id}] health report failed`, err),
         { immediate: true },
+      );
+
+      // Separate, coarser-grained cycle from health: content (mail/Azure
+      // cost) is expensive-ish and low-urgency, so it deliberately does NOT
+      // run `immediate: true` at boot the way health does.
+      this.scheduler.every(
+        CONTENT_REPORT_INTERVAL_MS,
+        async () => {
+          const content = await domain.reportContentSummary();
+          this.contentBus.publish(content);
+        },
+        (err) => console.error(`[${domain.config.id}] content report failed`, err),
       );
     }
   }
