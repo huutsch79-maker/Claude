@@ -1000,7 +1000,14 @@ export const DASHBOARD_HTML: string = `<!doctype html>
     var text = input.value.trim();
     var hasErrors = pendingAttachments.some(function (a) { return a.error; });
     if (!text || hasErrors || sendInFlight) return;
-    if (chatThreadState !== "loaded" && chatThreadState !== "empty") return;
+    // "load-failed" deliberately stays sendable — the server-side model
+    // context (recentChatContext) is intact and independent of whether this
+    // client's rendering of the OLD transcript succeeded; only "loading" is
+    // blocked, since there's nothing yet to append the optimistic bubbles
+    // onto. See Designer's state matrix section 7 (user-reviewer HIGH repro:
+    // the button looked active but silently no-op'd in load-failed before
+    // this fix).
+    if (chatThreadState === "loading") return;
 
     var sentDomain = currentDomain;
     var sentGen = domainGeneration;
