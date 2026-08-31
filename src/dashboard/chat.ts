@@ -34,6 +34,13 @@ function matchesClaimedImageType(mediaType: string, buf: Buffer): boolean {
   return check ? check(buf) : false;
 }
 
+// text/plain has no reliable magic bytes (any byte sequence can be valid
+// text) so only application/pdf is sniffed here — same rationale as
+// IMAGE_MAGIC_BYTES above: catch a claimed type that doesn't match reality.
+function matchesPdfMagicBytes(buf: Buffer): boolean {
+  return buf.length >= 5 && buf.toString("latin1", 0, 5) === "%PDF-";
+}
+
 export interface ChatAttachmentInput {
   filename: string;
   mediaType: string;
@@ -104,6 +111,9 @@ export function validateAttachments(raw: ChatAttachmentInput[]): AttachmentValid
     const doc = docs[0]!;
     if (doc.buf.length > MAX_DOCUMENT_BYTES) {
       return { ok: false, reason: `too large — ${formatMb(doc.buf.length)} MB, limit ${formatMb(MAX_DOCUMENT_BYTES)} MB` };
+    }
+    if (doc.mediaType === "application/pdf" && !matchesPdfMagicBytes(doc.buf)) {
+      return { ok: false, reason: "file content doesn't match the claimed type" };
     }
     return {
       ok: true,

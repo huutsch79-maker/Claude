@@ -26,6 +26,15 @@ function image(filename: string, byteLength: number, mediaType = "image/png"): C
   return { filename, mediaType, dataBase64: pngBuffer(byteLength).toString("base64") };
 }
 
+const PDF_MAGIC = Buffer.from("%PDF-", "latin1");
+
+/** A real %PDF--prefixed buffer, padded to byteLength — passes the content-sniffing check in validateAttachments. */
+function pdfBuffer(byteLength: number): Buffer {
+  const buf = Buffer.alloc(Math.max(byteLength, PDF_MAGIC.length), 7);
+  PDF_MAGIC.copy(buf, 0);
+  return buf.subarray(0, byteLength);
+}
+
 describe("validateAttachments", () => {
   it("accepts zero attachments", () => {
     const result = validateAttachments([]);
@@ -89,12 +98,18 @@ describe("validateAttachments", () => {
   });
 
   it("accepts a single PDF document up to MAX_DOCUMENT_BYTES", () => {
-    const result = validateAttachments([{ filename: "doc.pdf", mediaType: "application/pdf", dataBase64: b64(1024) }]);
+    const result = validateAttachments([{ filename: "doc.pdf", mediaType: "application/pdf", dataBase64: pdfBuffer(1024).toString("base64") }]);
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.attachments).toHaveLength(1);
       expect(result.attachments[0]!.kind).toBe("document");
     }
+  });
+
+  it("rejects a PDF-labeled attachment whose bytes don't start with %PDF- (Manager-flagged content-sniffing gap)", () => {
+    const result = validateAttachments([{ filename: "totally-safe.pdf", mediaType: "application/pdf", dataBase64: b64(1024) }]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toMatch(/doesn't match the claimed type/);
   });
 
   it("rejects a document over MAX_DOCUMENT_BYTES", () => {
