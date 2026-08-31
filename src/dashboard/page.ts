@@ -1109,7 +1109,33 @@ export const DASHBOARD_HTML: string = `<!doctype html>
     loadChatHistory(currentDomain, domainGeneration);
   }
 
-  init();
+  // Test-only escape hatch: exposes the pure state-vocabulary render
+  // functions (ghost/zero/stale/error handling) so they can be exercised
+  // by real unit tests against this actual shipped script, instead of only
+  // the static-analysis import check that touched this file before. Inert
+  // in production — window.__JARVIS_TEST_MODE__ is never set by real
+  // clients, so this branch never runs there and init() always fires
+  // exactly as before.
+  if (typeof window !== "undefined" && window.__JARVIS_TEST_MODE__) {
+    window.__jarvisInternals = {
+      renderGhostBlock: renderGhostBlock,
+      freshnessLine: freshnessLine,
+      renderTopBars: renderTopBars,
+      renderMailHeroTile: renderMailHeroTile,
+      renderMailTotalTile: renderMailTotalTile,
+      renderAzureTile: renderAzureTile,
+      worstCredentialStatus: worstCredentialStatus,
+      renderMailPanelInner: renderMailPanelInner,
+      renderCostPanelInner: renderCostPanelInner,
+      chip: chip,
+      shouldAutoExpand: shouldAutoExpand,
+      renderHealthBandChips: renderHealthBandChips,
+      renderHealthBandBody: renderHealthBandBody,
+      setCurrentDomain: function (d) { currentDomain = d; },
+    };
+  } else {
+    init();
+  }
 })();
 </script>
 </body>
