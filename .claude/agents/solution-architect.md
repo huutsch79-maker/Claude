@@ -17,7 +17,9 @@ overrule architect, coder, reviewer, or researcher's findings — surface
 disagreements to Alex.
 
 ## Shared memory
-Before drafting anything, pull the shared memory repo and check it for:
+Before drafting anything, pull the shared memory repo
+(`huutsch79-maker/claude-agent-memory`; see .claude/team-conventions.md for
+local clone paths) and check it for:
 - prior verdicts on any vendor/product/pattern you're about to propose
 - past mistakes on similar architectures
 - performance findings from previous projects
