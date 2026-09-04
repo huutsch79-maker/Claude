@@ -1,0 +1,1007 @@
+<title>JARVIS Domain Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root{
+  --bg:#eef0f4; --bg-detail:#e6e9ee; --card:#ffffff; --card-2:#f6f7f9; --sunk:#e7eaef;
+  --line:#dce0e7; --line-strong:#c3c9d3;
+  --hover:#f2f4f7; --active:#e8ebef;
+  --ink:#171a1f; --ink-2:#525a68; --ink-3:#79818f;
+  --quiet:#646b78;
+  --ghost:#646b78; --ghost-line:#c3c9d2;
+  --data:#2a78d6; --data-track:#c9dcf5; --data-soft:#e8f0fb;
+  --ok:#1e7d34; --ok-bg:#e4f6e9;
+  --warn:#8a5a00; --warn-bg:#fff2d9;
+  --bad:#8c1b18; --bad-bg:#fbe6e5;
+  --crit:#a3231f; --crit-ink:#ffffff;
+  --work:#7a4a86; --work-tint:#f3ecf6;
+  --personal:#256d78; --personal-tint:#e6f2f3;
+  --accent:var(--work); --accent-tint:var(--work-tint);
+
+  --shadow:0 1px 2px rgba(20,25,35,.05), 0 8px 24px rgba(20,25,35,.06);
+  --serif:"Newsreader",Georgia,"Times New Roman",serif;
+  --sans:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#101317; --bg-detail:#0b0d10; --card:#191d23; --card-2:#1f242b; --sunk:#14181d;
+    --line:#2a3038; --line-strong:#3d4650;
+    --hover:#22272e; --active:#2a3038;
+    --ink:#e9ecf1; --ink-2:#a2abb8; --ink-3:#7d8695;
+    --quiet:#9aa1ac;
+    --ghost:#9aa1ac; --ghost-line:#3a4049;
+    --data:#4d94e8; --data-track:#1d3f66; --data-soft:#16243a;
+    --ok:#7fe0a0; --ok-bg:#14301d;
+    --warn:#f0c674; --warn-bg:#33280d;
+    --bad:#f5918e; --bad-bg:#331413;
+    --crit:#cf4740; --crit-ink:#ffffff;
+    --work:#c49ad0; --work-tint:#2c2534;
+    --personal:#7cc2ce; --personal-tint:#1a2b2e;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.32);
+  }
+}
+:root[data-theme="dark"]{
+    --bg:#101317; --bg-detail:#0b0d10; --card:#191d23; --card-2:#1f242b; --sunk:#14181d;
+    --line:#2a3038; --line-strong:#3d4650;
+    --hover:#22272e; --active:#2a3038;
+    --ink:#e9ecf1; --ink-2:#a2abb8; --ink-3:#7d8695;
+    --quiet:#9aa1ac;
+    --ghost:#9aa1ac; --ghost-line:#3a4049;
+    --data:#4d94e8; --data-track:#1d3f66; --data-soft:#16243a;
+    --ok:#7fe0a0; --ok-bg:#14301d;
+    --warn:#f0c674; --warn-bg:#33280d;
+    --bad:#f5918e; --bad-bg:#331413;
+    --crit:#cf4740; --crit-ink:#ffffff;
+    --work:#c49ad0; --work-tint:#2c2534;
+    --personal:#7cc2ce; --personal-tint:#1a2b2e;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.32);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.5;
+  -webkit-font-smoothing:antialiased;padding-bottom:76px;transition:background-color .12s ease-out}
+body[data-depth="detail"]{background:var(--bg-detail)}
+@media (prefers-reduced-motion:no-preference){
+  .wrap{animation:fade .12s ease-out}
+}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+[data-domain="personal"]{--accent:var(--personal);--accent-tint:var(--personal-tint)}
+a{color:inherit}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* ---------- app bar ---------- */
+.bar{position:sticky;top:0;z-index:30;background:var(--card);border-bottom:1px solid var(--line);
+  padding:10px 16px;display:flex;align-items:center;gap:14px}
+.bar::before{content:"";position:fixed;left:0;top:0;bottom:0;width:4px;background:var(--accent);z-index:40}
+.mark{font-family:var(--serif);font-size:18px;letter-spacing:.01em;margin-left:6px}
+.mark i{font-style:italic;color:var(--ink-3)}
+.seg{display:inline-flex;padding:3px;gap:2px;background:var(--sunk);border:1px solid var(--line);border-radius:9px}
+.seg button{height:30px;padding:0 13px;border:0;background:transparent;color:var(--ink-3);
+  font-size:13px;font-weight:600;border-radius:6px;cursor:pointer}
+.seg button[aria-checked="true"]{background:var(--accent-tint);color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.fresh{margin-left:auto;font-size:12px;color:var(--ink-3);font-variant-numeric:tabular-nums;white-space:nowrap}
+@media(max-width:430px){.mark i{display:none}.bar{gap:10px}.wrap{padding-left:12px;padding-right:12px}}
+.iconbtn{width:36px;height:36px;border:1px solid var(--line);background:var(--card);border-radius:8px;cursor:pointer;
+  display:grid;place-items:center}
+
+/* ---------- shell ---------- */
+.wrap{max-width:660px;margin:0 auto;padding:22px 16px 40px}
+.wrap.wide{max-width:940px}
+
+/* ---------- verdict ---------- */
+.verdict{padding:26px 0 22px;border-bottom:1px solid var(--line);cursor:pointer;display:block;width:100%;
+  background:none;border-top:0;border-left:0;border-right:0;text-align:left}
+.verdict-kicker{font-size:11px;letter-spacing:.09em;text-transform:uppercase;font-weight:600;color:var(--ink-3);
+  display:flex;align-items:center;gap:7px;margin-bottom:12px}
+.verdict h1{font-family:var(--serif);font-weight:400;font-size:clamp(29px,6.4vw,40px);line-height:1.14;
+  margin:0 0 10px;letter-spacing:-.012em;text-wrap:balance}
+.verdict h1 em{font-style:italic;color:var(--quiet);font-size:.72em}
+.verdict p{margin:0;font-size:15px;color:var(--ink-2);max-width:52ch}
+.verdict .cov{margin-top:16px;font-size:13px;color:var(--ink-3);display:flex;align-items:center;gap:8px}
+.cov b{font-weight:600;color:var(--ink-2);font-variant-numeric:tabular-nums}
+.cov-bar{flex:1;max-width:130px;height:5px;border-radius:3px;background:var(--sunk);overflow:hidden;
+  border:1px solid var(--line)}
+.cov-bar i{display:block;height:100%;background:var(--data)}
+
+/* ---------- findings ---------- */
+.findings{display:flex;flex-direction:column;gap:1px;background:var(--line);border-bottom:1px solid var(--line)}
+.finding{display:flex;gap:12px;align-items:flex-start;padding:15px 0;background:var(--bg);border:0;width:100%;
+  text-align:left;cursor:pointer;min-height:44px}
+.finding .txt{flex:1;min-width:0}
+.finding .h{display:block;font-weight:600;font-size:14.5px;margin-bottom:3px}
+.finding .e{display:block;font-size:13px;color:var(--ink-2)}
+.chev{color:var(--ink-3);flex:none;margin-top:2px}
+
+/* ---------- setup ---------- */
+.setup{margin-top:22px;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);
+  overflow:hidden}
+.setup-h{padding:14px 16px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--line)}
+.setup-h b{font-size:14px;font-weight:600;flex:none}
+.setup-prog{flex:1;display:flex;gap:4px}
+.setup-prog i{flex:1;height:6px;border-radius:3px;background:var(--data-track)}
+.setup-prog i.on{background:var(--data)}
+.setup-foot{padding:11px 16px;border-top:1px solid var(--line);font-size:12px;color:var(--ink-3)}
+@media(hover:hover){.setup-row:hover{background:var(--hover)}}
+.setup-row .act{font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:2px;color:var(--ink)}
+.setup-h span{font-size:12.5px;color:var(--ink-2);font-variant-numeric:tabular-nums;flex:none}
+.setup-row{display:flex;align-items:center;gap:11px;padding:12px 16px;border-top:1px solid var(--line);
+  background:none;border-left:0;border-right:0;border-bottom:0;width:100%;text-align:left;cursor:pointer;min-height:46px}
+.setup-row:first-of-type{border-top:0}
+.setup-row .nm{flex:1;font-size:14px}
+.setup-row .st{font-size:12.5px;color:var(--ink-3)}
+
+/* ---------- disclosure + grid ---------- */
+.disc{margin-top:22px;border-top:1px solid var(--line);padding-top:6px}
+.disc>summary{list-style:none;cursor:pointer;padding:12px 2px;font-size:13.5px;font-weight:600;color:var(--ink-2);
+  display:flex;align-items:center;gap:9px;min-height:44px}
+.disc>summary::-webkit-details-marker{display:none}
+.disc[open]>summary .tri{transform:rotate(90deg)}
+.tri{transition:transform .14s ease;color:var(--ink-3)}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:6px 0 4px}
+@media(min-width:600px){.grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}}
+@media(min-width:900px){.grid{grid-template-columns:repeat(5,minmax(0,1fr))}}
+.cell{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 13px;text-align:left;
+  cursor:pointer;min-height:96px;display:flex;flex-direction:column;gap:4px;width:100%}
+.cell[data-inert]{cursor:default}
+.cell[data-ghost]{border-style:dashed;border-color:var(--ghost-line);background:none}
+@media(hover:hover){.cell:not([data-inert]):hover{background:var(--hover);border-color:var(--line-strong)}}
+.cell:not([data-inert]):active{background:var(--active)}
+.dashglyph{display:block;width:14px;height:2.5px;border-radius:2px;background:var(--quiet);margin:10px 0 4px}
+.cell .lb{font-size:10.5px;letter-spacing:.075em;text-transform:uppercase;font-weight:600;color:var(--ink-3)}
+.cell .vl{font-size:25px;font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1.1}
+.cell .vl.sm{font-size:15px;font-weight:500;letter-spacing:0}
+.cell .sub{font-size:11.5px;color:var(--ink-3);margin-top:auto;font-variant-numeric:tabular-nums}
+.cell .delta{font-size:12px;color:var(--ink-2);font-weight:500}
+.nosig{font-size:12px;color:var(--quiet);line-height:1.35;margin-top:2px}
+.awaitv{font-size:13px;font-weight:600;color:var(--quiet);display:flex;align-items:center;gap:6px;
+  line-height:1.3;margin:3px 0 2px}
+
+/* ---------- detail views ---------- */
+.back{display:inline-flex;align-items:center;gap:6px;font-size:13.5px;color:var(--ink-2);background:none;border:0;
+  cursor:pointer;padding:10px 2px;min-height:44px}
+.dt-h{margin:6px 0 20px}
+.dt-h h2{font-family:var(--serif);font-weight:400;font-size:27px;margin:0 0 6px;letter-spacing:-.01em}
+.dt-h .meta{font-size:13px;color:var(--ink-3)}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;box-shadow:var(--shadow);
+  margin-bottom:14px}
+.panel h3{font-size:11px;letter-spacing:.085em;text-transform:uppercase;color:var(--ink-3);margin:0 0 13px;font-weight:600}
+.big{font-size:38px;font-weight:600;letter-spacing:-.025em;font-variant-numeric:tabular-nums;line-height:1}
+.bigsub{font-size:13px;color:var(--ink-2);margin-top:5px}
+
+.meter{height:9px;border-radius:5px;background:var(--data-track);overflow:hidden;margin:14px 0 7px}
+.meter i{display:block;height:100%;background:var(--data);border-radius:0 5px 5px 0}
+.mcap{font-size:12.5px;color:var(--ink-2);font-variant-numeric:tabular-nums}
+
+.rank{display:flex;flex-direction:column;gap:2px}
+.rank button{display:grid;grid-template-columns:minmax(0,1fr) 124px auto;gap:11px;align-items:center;background:none;
+  border:0;border-radius:7px;padding:11px 8px;margin:0 -8px;cursor:pointer;text-align:left;min-height:46px;width:calc(100% + 16px)}
+.rank button:hover{background:var(--card-2)}
+.rank .nm{font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink-2)}
+.rank .tr{height:9px;border-radius:0 4px 4px 0;background:var(--data)}
+.rank .vv{font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;text-align:right;min-width:66px}
+
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th{text-align:left;font-size:10.5px;letter-spacing:.075em;text-transform:uppercase;color:var(--ink-3);
+  font-weight:600;padding:0 0 9px;border-bottom:1px solid var(--line)}
+td{padding:12px 0;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:0}
+.rowbtn{background:none;border:0;padding:0;margin:0;font:inherit;color:inherit;cursor:pointer;text-align:left;width:100%}
+.mono{font-family:var(--mono);font-size:12.5px}
+
+.pill{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 9px;border-radius:999px;font-size:11.5px;
+  font-weight:600;white-space:nowrap}
+.p-ok{background:var(--ok-bg);color:var(--ok)}
+.p-warn{background:var(--warn-bg);color:var(--warn)}
+.p-bad{background:var(--bad-bg);color:var(--bad)}
+.p-crit{background:var(--crit);color:var(--crit-ink)}
+.p-ghost{color:var(--ghost);border:1px dashed var(--ghost-line)}
+.p-none{color:var(--quiet);border:1px solid var(--line)}
+
+.note{border-left:3px solid var(--line-strong);padding:11px 0 11px 13px;font-size:13px;color:var(--ink-2);margin:14px 0 0}
+.note.warnish{border-left-color:var(--warn);background:var(--warn-bg);padding:11px 13px;border-radius:0 7px 7px 0;color:var(--ink)}
+.banner{display:flex;gap:9px;align-items:flex-start;padding:11px 13px;border-radius:8px;font-size:13px;margin-bottom:14px}
+.b-bad{background:var(--bad-bg);color:var(--bad);border-left:3px solid var(--bad)}
+.b-warn{background:var(--warn-bg);color:var(--warn);border-left:3px solid var(--warn)}
+.ghostblock{border:1px dashed var(--ghost-line);border-radius:9px;padding:15px;color:var(--ghost)}
+.ghostblock b{display:block;color:var(--ink-2);font-size:14px;margin-bottom:4px}
+.hatchblock{border:1px solid var(--line);border-radius:9px;padding:15px;color:var(--quiet);background:var(--card)}
+.hatchblock b{color:var(--ink);font-size:14px;margin-bottom:6px;display:flex;align-items:center;gap:8px}
+
+.coda{margin-top:26px;padding-top:20px;border-top:1px solid var(--line)}
+.floor{display:flex;align-items:center;justify-content:center;gap:9px;width:100%;background:var(--accent);
+  color:#fff;border:0;border-radius:8px;padding:0 20px;cursor:pointer;min-height:46px;font-size:14.5px;font-weight:600}
+:root[data-theme="dark"] .floor{color:#12151a}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .floor{color:#12151a}}
+@media(hover:hover){.floor:hover{filter:brightness(1.07)}}
+.seedprompt{margin:10px 0 0;font-size:12.5px;color:var(--quiet);font-style:italic;line-height:1.45;text-align:center}
+
+/* stacked daily cost */
+.stack{display:flex;align-items:flex-end;gap:3px;height:104px;margin:4px 0 9px}
+.stack .day{flex:1;display:flex;flex-direction:column-reverse;border-radius:2px 2px 0 0;overflow:hidden;min-width:0}
+.stack .day i{display:block;width:100%}
+.axis{display:flex;justify-content:space-between;font-size:10.5px;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.legend{display:flex;flex-wrap:wrap;gap:11px;margin-top:12px;font-size:12px;color:var(--ink-2)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{width:10px;height:10px;border-radius:2px;display:block}
+
+/* ---------- chat ---------- */
+.thread{display:flex;flex-direction:column;gap:13px;margin-bottom:16px}
+.msg{max-width:82%;padding:11px 13px;font-size:14px;border-radius:14px;line-height:1.5}
+.msg.you{margin-left:auto;background:var(--card-2);border:1px solid var(--line);border-bottom-right-radius:5px}
+.msg.j{background:var(--card);border:1px solid var(--line-strong);border-bottom-left-radius:5px}
+.msg .who{font-size:10.5px;letter-spacing:.075em;text-transform:uppercase;font-weight:600;color:var(--ink-3);
+  margin-bottom:5px}
+.composer{background:var(--card);border:1px solid var(--line-strong);border-radius:12px;padding:11px;
+  display:flex;gap:9px;align-items:flex-end;box-shadow:var(--shadow)}
+.composer textarea{flex:1;border:0;background:none;resize:none;font:inherit;font-size:14px;color:var(--ink);
+  min-height:44px;max-height:150px;outline:none;padding:6px 4px;font-size:16px}
+.composer textarea::placeholder{color:var(--ink-3)}
+.send{height:38px;padding:0 15px;border-radius:9px;border:0;background:var(--ink);color:var(--bg);font-weight:600;
+  font-size:13.5px;cursor:pointer;flex:none}
+.cnote{font-size:12px;color:var(--ink-3);margin-top:9px;line-height:1.5}
+
+/* ---------- bottom bar ---------- */
+.tabs{position:fixed;left:0;right:0;bottom:0;z-index:30;display:flex;background:var(--card);
+  border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
+.tabs button{flex:1;border:0;background:none;padding:11px 0 13px;font-size:11.5px;font-weight:600;color:var(--ink-3);
+  cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;min-height:56px}
+.tabs button[aria-current="page"]{color:var(--accent)}
+
+/* ---------- scenario switch (prototype only) ---------- */
+.proto{position:fixed;right:12px;bottom:74px;z-index:35;display:flex;gap:5px;background:var(--card);
+  border:1px solid var(--line-strong);border-radius:999px;padding:4px;box-shadow:var(--shadow)}
+.proto button{border:0;background:none;font-size:11.5px;font-weight:600;color:var(--ink-3);padding:6px 11px;
+  border-radius:999px;cursor:pointer;min-height:32px}
+.proto button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+.protolabel{position:fixed;right:12px;bottom:118px;z-index:35;font-size:10px;letter-spacing:.08em;
+  text-transform:uppercase;font-weight:600;color:var(--ink-3);background:var(--bg);padding:2px 6px;border-radius:4px}
+@media(max-width:600px){.protolabel{display:none}.proto{bottom:68px;left:12px;justify-content:center}}
+</style>
+
+<div class="bar">
+  <span class="mark">JARVIS <i>console</i></span>
+  <div class="seg" role="radiogroup" aria-label="Domain">
+    <button role="radio" aria-checked="true" data-dom="work">Work</button>
+    <button role="radio" aria-checked="false" data-dom="personal">Personal</button>
+  </div>
+  <span class="fresh" id="fresh">as of 4s</span>
+  <button class="iconbtn" id="theme" aria-label="Toggle theme">
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+      <path d="M13 9.5A5.5 5.5 0 016.5 3a5.5 5.5 0 106.5 6.5z" stroke-linejoin="round"/></svg>
+  </button>
+</div>
+
+<main id="app" class="wrap"></main>
+
+<span class="protolabel">Prototype — data state</span>
+<div class="proto">
+  <button data-sc="today" aria-pressed="true">As deployed</button>
+  <button data-sc="restarted" aria-pressed="false">Just restarted</button>
+  <button data-sc="wired" aria-pressed="false">Fully wired</button>
+</div>
+
+<nav class="tabs">
+  <button data-tab="dash" aria-current="page">
+    <svg width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+      <rect x="1.8" y="1.8" width="5" height="5" rx="1"/><rect x="9.2" y="1.8" width="5" height="5" rx="1"/>
+      <rect x="1.8" y="9.2" width="5" height="5" rx="1"/><rect x="9.2" y="9.2" width="5" height="5" rx="1"/></svg>
+    Dashboard</button>
+  <button data-tab="chat">
+    <svg width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+      <path d="M14 9.5a2 2 0 01-2 2H5l-3 2.5v-10a2 2 0 012-2h8a2 2 0 012 2z" stroke-linejoin="round"/></svg>
+    Ask JARVIS</button>
+</nav>
+
+<script>
+"use strict";
+/* ============================================================
+   Prototype of the redesign: verdict-first, drill-down by hash
+   route, honest "unmeasured" states. Data below is realistic
+   sample data, not Alex's live figures.
+   ============================================================ */
+
+var ICON = {
+  ok:'<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="6.2"/><path d="M5.4 8.2l1.9 1.9 3.4-3.9" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  warn:'<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 2.2l6 10.6H2z" stroke-linejoin="round"/><path d="M8 6.4v2.9M8 11.2v.1" stroke-linecap="round"/></svg>',
+  bad:'<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="6.2"/><path d="M8 4.9v3.5M8 10.9v.1" stroke-linecap="round"/></svg>',
+  crit:'<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5.4 1.9h5.2l3.5 3.5v5.2l-3.5 3.5H5.4L1.9 10.6V5.4z" stroke-linejoin="round"/><path d="M8 4.9v3.6M8 11v.1" stroke-linecap="round"/></svg>',
+  none:'<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="6.2" stroke-dasharray="2.6 2.2"/><path d="M4.6 11.4l6.8-6.8" stroke-linecap="round"/></svg>',
+  ghost:'<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="6.2" stroke-dasharray="2.6 2.2"/></svg>',
+  chev:'<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M6 3.5L10.5 8 6 12.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  arrow:'<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 8h9M8.5 4.2L12.3 8l-3.8 3.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  clock:'<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="6.2"/><path d="M8 4.6V8l2.3 1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  dash:'<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M3.4 8h9.2" stroke-linecap="round"/></svg>',
+  chat:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M14 9.2a2 2 0 01-2 2H5.4L2.6 13.4V4.8a2 2 0 012-2h7.4a2 2 0 012 2z" stroke-linejoin="round"/></svg>',
+  left:'<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M10 3.5L5.5 8 10 12.5" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+};
+
+/* ---------- sample data ---------- */
+var NZ = function(n){ return "$" + n.toLocaleString("en-NZ",{minimumFractionDigits:2,maximumFractionDigits:2}); };
+
+var DATA = {
+  work: {
+    label:"NZB (work)",
+    mail:{ status:"connected", unread:41, total:1204, delta:7, synced:"6m ago",
+      senders:[
+        {n:"billing@datacom.co.nz", c:38},
+        {n:"Priya Raman", c:31},
+        {n:"noreply@azure.microsoft.com", c:24},
+        {n:"servicedesk@nzb.co.nz", c:19},
+        {n:"Tom Whitcombe", c:12}]},
+    cost:{ status:"connected", mtd:4182.19, delta:41.1, cur:"NZD", synced:"6m ago",
+      services:[
+        {n:"Storage", c:1204.00},
+        {n:"Virtual Machines", c:890.12},
+        {n:"Networking", c:612.40},
+        {n:"Backup", c:380.05},
+        {n:"Log Analytics", c:296.22}],
+      other:799.40 },
+    creds:[
+      {ref:"nzb-m365-oauth", st:"expiring", exp:"in 6 days", env:"JARVIS_WORK_NZB_M365_OAUTH", uses:"Work mail summary"},
+      {ref:"nzb-dynamics", st:"ok", exp:"in 4 months", env:"JARVIS_WORK_DYNAMICS_BASE_URL", uses:"Dynamics BC lookups"},
+      {ref:"nzb-azure-arm", st:"unmon", exp:"—", env:"JARVIS_WORK_AZURE_CLIENT_SECRET", uses:"Azure cost panel"}],
+    modules:[{n:"nzb-m365-connector",e:true,p:100,r:0},{n:"reviewer",e:true,p:50,r:0},{n:"self-heal",e:true,p:50,r:1}],
+    errors:{ fatal:0, transient:3 },
+    proposals:[
+      {id:"p-4471", cat:"credential", tier:"requires_approval", when:"05:30 today",
+        s:"Credential nzb-m365-oauth expires in 6 days — rotate the app registration secret."},
+      {id:"p-4468", cat:"registry", tier:"auto", when:"yesterday 23:14",
+        s:"Capability nzb-m365-connector returned 401 on 3 consecutive cycles — suggest restart."},
+      {id:"p-4460", cat:"memory", tier:"auto", when:"2 days ago",
+        s:"142 memory rows in work.memory have no embedding — embedding provider unconfigured."}],
+    daily:[210,198,240,265,180,150,142,268,290,275,301,255,190,166,288,296,310,282,214,175,168,299,305,288,262,201,178,190]
+  },
+  personal: {
+    label:"Personal",
+    mail:{ status:"connected", unread:7167, total:24891, delta:23, synced:"11m ago",
+      senders:[
+        {n:"Waikato Regional Council", c:96},
+        {n:"news@stuff.co.nz", c:74},
+        {n:"PGG Wrightson", c:58},
+        {n:"Farmlands Co-op", c:41},
+        {n:"Mum", c:9}]},
+    cost:null,
+    creds:[
+      {ref:"hotmail-oauth", st:"ok", exp:"in 2 months", env:"JARVIS_PERSONAL_HOTMAIL_OAUTH", uses:"Personal mail summary"}],
+    modules:[{n:"hotmail-outlook",e:true,p:100,r:0},{n:"reviewer",e:true,p:50,r:0},{n:"self-heal",e:true,p:50,r:0}],
+    errors:{ fatal:0, transient:0 },
+    proposals:[
+      {id:"p-4455", cat:"memory", tier:"auto", when:"3 days ago",
+        s:"personal.relations has not been written in 14 days — relation batch job may be idle."}],
+    daily:null
+  }
+};
+
+/* Which checks are actually wired, per scenario. "today" mirrors the
+   deployed reality the review found; "wired" is after the backend work. */
+var SCENARIO = "today";
+var WIRED = {
+  today: { mail:false, cost:false, modules:false, errors:false, approvals:false, ledger:"partial", mailboxes:false },
+  restarted:{ mail:"awaiting", cost:"awaiting", modules:false, errors:false, approvals:false, ledger:"partial", mailboxes:false },
+  wired: { mail:true,  cost:true,  modules:true,  errors:true,  approvals:true,  ledger:true,      mailboxes:true }
+};
+
+var state = { domain:"work", tab:"dash", seed:"", chat:{ work:[], personal:[] } };
+
+/* ---------- check registry ---------- */
+function buildChecks(dom){
+  var d = DATA[dom], w = WIRED[SCENARIO], out = [];
+  var P = function(id,label,st,head,ev,route){ out.push({id:id,label:label,state:st,head:head,ev:ev,route:route}); };
+
+  P("report","Health reporting","ok","Reporting normally","Last report 42s ago","#/"+dom+"/errors");
+
+  var worst = d.creds.filter(function(c){return c.st==="expiring"||c.st==="expired";})[0];
+  if(worst) P("credentials","Credentials","attention",
+      worst.ref+" expires "+worst.exp, "Rotate the app registration secret before it lapses","#/"+dom+"/credentials/"+worst.ref);
+  else P("credentials","Credentials","ok",d.creds.length+" tracked, all valid",null,"#/"+dom+"/credentials");
+
+  if(w.mail===false) P("mail","Mail sync","notconf","Mail is not connected",
+      "Set "+(dom==="work"?"JARVIS_WORK_NZB_M365_OAUTH":"JARVIS_PERSONAL_HOTMAIL_OAUTH"),"#/"+dom+"/setup");
+  else if(w.mail==="awaiting") P("mail","Mail sync","awaiting","Mail has not reported yet",
+      "First sync due in about 4 minutes","#/"+dom+"/mail");
+  else P("mail","Mail sync","ok",d.mail.unread+" unread of "+d.mail.total.toLocaleString(),
+      "Synced "+d.mail.synced,"#/"+dom+"/mail");
+
+  if(dom!=="work") P("cost","Azure cost","na",null,null,null);
+  else if(w.cost===false) P("cost","Azure cost","notconf","Azure cost is not connected",
+      "Four JARVIS_WORK_AZURE_* variables needed","#/"+dom+"/setup");
+  else if(w.cost==="awaiting") P("cost","Azure cost","awaiting","Cost has not reported yet",
+      "First sync due in about 4 minutes","#/"+dom+"/cost");
+  else P("cost","Azure cost","ok",NZ(d.cost.mtd)+" month to date","Synced "+d.cost.synced,"#/"+dom+"/cost");
+
+  if(!w.modules) P("modules","Module roster","unmeasured","Roster not published",
+      "Module health is built from restart counts, so a healthy module never appears","#/"+dom+"/modules");
+  else P("modules","Module roster","ok",d.modules.length+" registered, none degraded",null,"#/"+dom+"/modules");
+
+  if(!w.errors) P("errors","Errors 24h","unmeasured","Error log not connected",
+      "The orchestrator starts with no error source, so this always reports zero","#/"+dom+"/errors");
+  else P("errors","Errors 24h", d.errors.fatal>0?"blocking":"ok",
+      d.errors.fatal+" fatal, "+d.errors.transient+" transient", null,"#/"+dom+"/errors");
+
+  if(!w.approvals) P("approvals","Awaiting your decision","unmeasured","Approvals queue has no producer",
+      "Reviewer proposals never reach the approval gate","#/"+dom+"/proposals/pending");
+  else {
+    var pend = d.proposals.filter(function(p){return p.tier==="requires_approval";}).length;
+    P("approvals","Awaiting your decision", pend?"attention":"ok",
+      pend? pend+" proposal"+(pend>1?"s":"")+" awaiting you" : "Nothing awaiting you", null,"#/"+dom+"/proposals/pending");
+  }
+
+  P("ledger","Self-heal ledger", w.ledger===true?"ok":"attention",
+    d.proposals.length+" new proposal"+(d.proposals.length===1?"":"s")+" in 24h",
+    w.ledger===true? null : "Outcomes not tracked — every proposal stays pending","#/"+dom+"/proposals");
+
+  if(!w.mailboxes) P("mailboxes","Mailbox activity","unmeasured","Not built",
+      "Needs a definition of idle and a Graph reporting permission",null);
+  else P("mailboxes","Mailbox activity","attention","27 of 168 idle 30 days","Work tenant mailboxes","#/"+dom+"/mailboxes");
+
+  return out;
+}
+
+function verdictOf(checks){
+  var real = checks.filter(function(c){return c.state!=="na";});
+  var measured = real.filter(function(c){return c.state==="ok"||c.state==="attention"||c.state==="blocking";}).length;
+  var block = real.filter(function(c){return c.state==="blocking";});
+  var att = real.filter(function(c){return c.state==="attention";});
+  var unm = real.filter(function(c){return c.state==="unmeasured"||c.state==="notconf"||c.state==="awaiting";});
+  var awa = real.filter(function(c){return c.state==="awaiting";});
+  var v = { measured:measured, total:real.length, unmeasured:unm.length, findings:block.concat(att) };
+  if(block.length){ v.kind="blocking"; v.title="Needs you"; v.line=block[0].head; }
+  else if(att.length){ v.kind="attention"; v.title="Worth a look"; v.line=att[0].head; }
+  else if(awa.length){ v.kind="awaiting"; v.title="Checking\u2026";
+        v.line="JARVIS restarted a few minutes ago. "+awa.length+" check"+(awa.length>1?"s have":" has")
+             +" not reported in yet \u2014 nothing here is stale, it simply has not arrived."; }
+  else if(unm.length){ v.kind="partial"; v.title="All clear"; v.line="on the "+measured+" checks that are actually measured."; }
+  else { v.kind="ok"; v.title="All clear"; v.line="Everything measured is within bounds."; }
+  return v;
+}
+
+/* ---------- helpers ---------- */
+function esc(s){ return String(s).replace(/[&<>"']/g,function(c){
+  return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
+function pillFor(st){
+  if(st==="ok") return '<span class="pill p-ok">'+ICON.ok+'Valid</span>';
+  if(st==="expiring") return '<span class="pill p-warn">'+ICON.warn+'Expiring soon</span>';
+  if(st==="expired") return '<span class="pill p-bad">'+ICON.bad+'Expired</span>';
+  if(st==="unmon") return '<span class="pill p-none">'+ICON.none+'Not monitored</span>';
+  return '<span class="pill p-ghost">'+ICON.ghost+'Not set</span>';
+}
+function iconFor(st){
+  return st==="blocking"?ICON.crit : st==="attention"?ICON.warn : st==="ok"?ICON.ok
+       : st==="notconf"?ICON.ghost : st==="awaiting"?ICON.clock : ICON.dash;
+}
+function colorFor(st){
+  return st==="blocking"?"var(--crit)" : st==="attention"?"var(--warn)" : st==="ok"?"var(--ok)" : "var(--quiet)";
+}
+var scrollMem = {};
+function go(hash){ scrollMem[location.hash] = window.scrollY; location.hash = hash; }
+
+/* ---------- views ---------- */
+function viewOverview(dom){
+  var d = DATA[dom], w = WIRED[SCENARIO];
+  var checks = buildChecks(dom), v = verdictOf(checks);
+  var h = "";
+
+  /* verdict */
+  var vs = v.kind==="partial" ? "ok" : v.kind;
+  h += '<button class="verdict" data-go="'+(v.findings[0]? v.findings[0].route : "#/"+dom+"/setup")+'">';
+  h +=   '<span class="verdict-kicker"><span style="color:'+colorFor(vs)+';display:inline-flex">'
+       + iconFor(vs) + '</span>' + esc(d.label) + '</span>';
+  h +=   '<h1'+(v.kind==="blocking"||v.kind==="attention"?' style="color:'+colorFor(v.kind)+'"':'')+'>'
+       + esc(v.title)+(v.kind==="partial"?' <em>on '+v.measured+' of '+v.total+' checks</em>':'')+'</h1>';
+  h +=   '<p>'+esc(v.line)+'</p>';
+  h +=   '<span class="cov"><b>'+v.measured+'/'+v.total+'</b> measured'
+       + '<span class="cov-bar"><i style="width:'+Math.round(v.measured/v.total*100)+'%"></i></span>'
+       + (v.unmeasured? '<b>'+v.unmeasured+'</b> not measured':'') + '</span>';
+  h += '</button>';
+
+  /* findings */
+  if(v.findings.length){
+    h += '<div class="findings">';
+    v.findings.forEach(function(c){
+      h += '<button class="finding" data-go="'+c.route+'">'
+         + '<span style="color:'+colorFor(c.state)+';flex:none;margin-top:1px">'+iconFor(c.state)+'</span>'
+         + '<span class="txt"><span class="h">'+esc(c.head)+'</span>'
+         + (c.ev? '<span class="e">'+esc(c.ev)+'</span>':'') + '</span>'
+         + '<span class="chev">'+ICON.chev+'</span></button>';
+    });
+    h += '</div>';
+  }
+
+  /* setup */
+  var notconf = checks.filter(function(c){return c.state==="notconf";});
+  var connectable = checks.filter(function(c){return c.state!=="na" && c.state!=="unmeasured";});
+  if(notconf.length){
+    var conn = connectable.length - notconf.length;
+    var segs = ""; for(var si=0; si<connectable.length; si++) segs += '<i'+(si<conn?' class="on"':'')+'></i>';
+    h += '<div class="setup"><div class="setup-h"><b>Setup</b>'
+       + '<span class="setup-prog">'+segs+'</span>'
+       + '<span>'+conn+' of '+connectable.length+' connected</span></div>';
+    /* connected first: the eye enters on evidence something already works */
+    var ordered = connectable.filter(function(c){return c.state!=="notconf";})
+                  .concat(connectable.filter(function(c){return c.state==="notconf";}));
+    ordered.forEach(function(c){
+      var done = c.state!=="notconf";
+      h += '<button class="setup-row" data-go="#/'+dom+'/setup"'+(done?' tabindex="-1"':'')+'>'
+         + '<span style="color:'+(done?"var(--ok)":"var(--quiet)")+';flex:none">'+(done?ICON.ok:ICON.ghost)+'</span>'
+         + '<span class="nm">'+esc(c.label)+'</span>'
+         + (done ? '<span class="st">Connected</span>'
+                 : '<span class="act">Connect '+ICON.chev+'</span>') + '</button>';
+    });
+    h += '<div class="setup-foot">'+notconf.length+' left</div></div>';
+  }
+
+  /* everything else */
+  h += '<details class="disc"'+(state.discOpen?" open":"")+'><summary><span class="tri">'+ICON.chev+'</span>Everything else</summary>';
+  h += '<div class="grid">';
+
+  function cell(label, valHtml, sub, route, inert){
+    return '<button class="cell"'+(inert?' data-inert="1"':'')+(route?' data-go="'+route+'"':'')+'>'
+      + '<span class="lb">'+esc(label)+'</span>' + valHtml
+      + (sub? '<span class="sub">'+esc(sub)+'</span>':'') + '</button>';
+  }
+  /* dashed = you can turn this on · clock = wait · dash = nothing to do */
+  function ghostCell(label, route){
+    return '<button class="cell" data-ghost="1" data-go="'+route+'"><span class="lb">'+esc(label)+'</span>'
+      + '<span class="awaitv" style="color:var(--ghost)">'+ICON.ghost+'Not connected</span>'
+      + '<span class="sub">Connect in Setup</span></button>'; }
+  function awaitCell(label, route){
+    return '<button class="cell" data-go="'+route+'"><span class="lb">'+esc(label)+'</span>'
+      + '<span class="awaitv">'+ICON.clock+'First sync due in ~4m</span>'
+      + '<span class="sub">Started 4m ago</span></button>'; }
+  function unmCell(label, why){
+    return '<button class="cell" data-inert="1"><span class="lb">'+esc(label)+'</span>'
+      + '<span class="dashglyph"></span><span class="nosig">Not measured \u2014 '+esc(why)+'</span></button>'; }
+
+  if(w.mail===true){
+    h += cell("Unread mail", '<span class="vl">'+d.mail.unread.toLocaleString()+'</span>'
+        + '<span class="delta">+'+d.mail.delta+' since 06:00</span>', d.mail.synced, "#/"+dom+"/mail");
+    h += cell("Total messages", '<span class="vl">'+d.mail.total.toLocaleString()+'</span>', d.mail.synced, "#/"+dom+"/mail");
+  } else if(w.mail==="awaiting"){
+    h += awaitCell("Unread mail", "#/"+dom+"/mail");
+    h += awaitCell("Total messages", "#/"+dom+"/mail");
+  } else {
+    h += ghostCell("Unread mail", "#/"+dom+"/setup");
+    h += ghostCell("Total messages", "#/"+dom+"/setup");
+  }
+
+  if(dom==="work"){
+    if(w.cost===true) h += cell("Azure month to date", '<span class="vl">'+NZ(d.cost.mtd)+'</span>'
+        + '<span class="delta">+'+NZ(d.cost.delta)+' today</span>', d.cost.synced, "#/"+dom+"/cost");
+    else if(w.cost==="awaiting") h += awaitCell("Azure month to date", "#/"+dom+"/cost");
+    else h += ghostCell("Azure month to date", "#/"+dom+"/setup");
+  }
+
+  var badCred = d.creds.filter(function(c){return c.st==="expiring"||c.st==="expired";}).length;
+  h += cell("Credentials", '<span class="vl">'+d.creds.length+'</span>'
+      + '<span class="delta">'+(badCred? badCred+" expiring" : "all valid")+'</span>', null, "#/"+dom+"/credentials");
+
+  h += w.modules
+    ? cell("Modules", '<span class="vl">'+d.modules.length+'</span><span class="delta">none degraded</span>', null, "#/"+dom+"/modules")
+    : unmCell("Modules", "only modules that have restarted are ever published");
+
+  h += w.errors
+    ? cell("Errors 24h", '<span class="vl">'+d.errors.fatal+'</span><span class="delta">'+d.errors.transient+' transient</span>', null, "#/"+dom+"/errors")
+    : unmCell("Errors 24h", "no error source is connected, so this always reads zero");
+
+  h += w.approvals
+    ? cell("Awaiting decision", '<span class="vl">'+d.proposals.filter(function(p){return p.tier==="requires_approval";}).length+'</span>', null, "#/"+dom+"/proposals/pending")
+    : unmCell("Awaiting decision", "proposals never reach the approval gate");
+
+  h += cell("Self-heal ledger", '<span class="vl">'+d.proposals.length+'</span>'
+      + '<span class="delta">new in 24h</span>', w.ledger===true? null : "outcomes not tracked", "#/"+dom+"/proposals");
+
+  h += w.mailboxes
+    ? cell("Mailbox activity", '<span class="vl">27</span><span class="delta">of 168 idle 30d</span>', null, "#/"+dom+"/mailboxes")
+    : unmCell("Mailbox activity", "not built; \u201cidle\u201d has no agreed definition yet");
+
+  h += cell("Health reporting", '<span class="vl sm">Reporting</span>', "last report 42s ago", "#/"+dom+"/errors");
+
+  h += '</div></details>';
+  return h;
+}
+
+function frame(dom, title, meta, body, floorLabel, floorSeed){
+  var h = '<button class="back" data-go="#/'+dom+'">'+ICON.left+esc(DATA[dom].label)+' overview</button>';
+  h += '<div class="dt-h"><h2>'+esc(title)+'</h2>'+(meta?'<div class="meta">'+esc(meta)+'</div>':'')+'</div>';
+  h += body;
+  if(floorLabel){
+    /* show the question before it is asked — a button that silently composes
+       on your behalf is the thing that erodes trust in an assistant */
+    h += '<div class="coda"><button class="floor" data-seed="'+esc(floorSeed)+'">'
+       + ICON.chat + esc(floorLabel) + '</button>'
+       + '<p class="seedprompt">\u201c'+esc(floorSeed)+'\u201d \u2014 you can edit it before sending</p></div>';
+  }
+  return h;
+}
+
+function viewMail(dom){
+  var d = DATA[dom], w = WIRED[SCENARIO];
+  if(w.mail==="awaiting"){
+    return frame(dom,"Mail",null,
+      '<div class="hatchblock"><b><span style="color:var(--quiet)">'+ICON.clock+'</span>First sync has not arrived</b>'
+      + 'The mail module is configured and running \u2014 it restarted about 4 minutes ago and its first report is due '
+      + 'in roughly 4 more. Nothing here is stale, because nothing has been measured yet. If this is still showing in '
+      + '15 minutes it stops being normal and becomes a warning.</div>');
+  }
+  if(w.mail===false){
+    return frame(dom,"Mail",null,
+      '<div class="ghostblock"><b>Not connected</b>Set <span class="mono">'
+      +(dom==="work"?"JARVIS_WORK_NZB_M365_OAUTH":"JARVIS_PERSONAL_HOTMAIL_OAUTH")
+      +'</span> to see mail data. Until then nothing here is being measured.</div>');
+  }
+  var m = d.mail, pct = Math.round(m.unread/m.total*100);
+  var body = '<div class="panel"><h3>Unread</h3><div class="big">'+m.unread.toLocaleString()+'</div>'
+    + '<div class="bigsub">of '+m.total.toLocaleString()+' messages · synced '+esc(m.synced)+'</div>'
+    + '<div class="meter"><i style="width:'+Math.max(pct,2)+'%"></i></div>'
+    + '<div class="mcap">'+pct+'% unread</div></div>';
+  var max = m.senders[0].c;
+  body += '<div class="panel"><h3>Top senders</h3><div class="rank">';
+  m.senders.forEach(function(s,i){
+    body += '<button data-go="#/'+dom+'/mail/sender/'+i+'">'
+      + '<span class="nm" title="'+esc(s.n)+'">'+esc(s.n)+'</span>'
+      + '<span class="tr" style="width:'+Math.round(s.c/max*124)+'px"></span>'
+      + '<span class="vv">'+s.c+'</span></button>';
+  });
+  body += '</div><p class="note">These five are the head of the distribution, not the whole of it — they account for '
+    + m.senders.reduce(function(a,b){return a+b.c;},0) + ' of ' + m.unread + ' unread.</p></div>';
+  return frame(dom,"Mail","Counts only — the summary that crosses into the dashboard carries no subjects",body,
+    "Ask JARVIS about this mailbox","Summarise what's been arriving in my "+(dom==="work"?"NZB":"personal")+" inbox lately");
+}
+
+function viewSender(dom, idx){
+  var m = DATA[dom].mail, s = m.senders[idx];
+  if(!s || !WIRED[SCENARIO].mail) return viewMail(dom);
+  var topTotal = m.senders.reduce(function(a,b){return a+b.c;},0);
+  var body = '<div class="panel"><h3>Messages</h3><div class="big">'+s.c+'</div>'
+    + '<div class="bigsub">rank '+(idx+1)+' of 5 · '+Math.round(s.c/topTotal*100)+'% of the top five · '
+    + Math.round(s.c/m.unread*100)+'% of all unread</div></div>';
+  body += '<div class="panel"><h3>What the dashboard can see</h3>'
+    + '<p style="margin:0;font-size:13.5px;color:var(--ink-2)">The mail summary that crosses the domain boundary carries '
+    + '<b>counts only</b> — no subjects, no message list, no addresses beyond the display name. That is a deliberate '
+    + 'property of the channel, not a missing feature. To go further, hand it to JARVIS.</p></div>';
+  return frame(dom, s.n, "Last synced "+m.synced, body,
+    "Ask JARVIS about this sender", "Summarise recent mail from "+s.n);
+}
+
+function viewCost(dom){
+  var d = DATA[dom], w = WIRED[SCENARIO];
+  if(dom!=="work") { go("#/"+dom); return ""; }
+  if(w.cost==="awaiting") return frame(dom,"Azure cost",null,
+    '<div class="hatchblock"><b><span style="color:var(--quiet)">'+ICON.clock+'</span>First sync has not arrived</b>'
+    + 'Cost Management is configured. The first query since the restart is due in roughly 4 minutes.</div>');
+  if(w.cost===false) return frame(dom,"Azure cost",null,
+    '<div class="ghostblock"><b>Not connected</b>Needs <span class="mono">JARVIS_WORK_AZURE_TENANT_ID</span>, '
+    +'<span class="mono">_CLIENT_ID</span>, <span class="mono">_CLIENT_SECRET</span> and '
+    +'<span class="mono">_SUBSCRIPTION_ID</span>.</div>');
+  var c = d.cost, top = c.services.reduce(function(a,b){return a+b.c;},0);
+  var body = '<div class="panel"><h3>Month to date</h3><div class="big">'+NZ(c.mtd)+'</div>'
+    + '<div class="bigsub">'+c.cur+' · synced '+esc(c.synced)+'</div></div>';
+
+  var shades = ["var(--data)","color-mix(in srgb,var(--data) 82%,var(--card))","color-mix(in srgb,var(--data) 64%,var(--card))",
+                "color-mix(in srgb,var(--data) 47%,var(--card))","color-mix(in srgb,var(--data) 31%,var(--card))",
+                "color-mix(in srgb,var(--data) 16%,var(--card))"];
+  var dayMax = Math.max.apply(null, d.daily);
+  body += '<div class="panel"><h3>Daily spend, this month</h3><div class="stack">';
+  var baseMix = [0.29,0.21,0.15,0.09,0.07,0.19];
+  d.daily.forEach(function(v,di){
+    var hgt = Math.round(v/dayMax*100), mix = [], sum = 0;
+    for(var k=0;k<6;k++){
+      var j = Math.sin((di+1)*(k+2)*12.9898)*43758.5453; j = j - Math.floor(j);
+      var w = baseMix[k]*(0.6+0.8*j); mix.push(w); sum += w;
+    }
+    var seg = '';
+    mix.forEach(function(share,si){
+      seg += '<i style="height:'+(share/sum*100).toFixed(2)+'%;background:'+shades[si]+'"></i>';
+    });
+    body += '<span class="day" style="height:'+hgt+'%" title="'+NZ(v)+'">'+seg+'</span>';
+  });
+  body += '</div><div class="axis"><span>1 Sep</span><span>28 Sep</span></div>';
+  body += '<div class="legend">';
+  c.services.forEach(function(s,i){ body += '<span><i style="background:'+shades[i]+'"></i>'+esc(s.n)+'</span>'; });
+  body += '<span><i style="background:'+shades[5]+'"></i>Other</span></div></div>';
+
+  var max = c.services[0].c;
+  body += '<div class="panel"><h3>Top services</h3><div class="rank">';
+  c.services.forEach(function(s,i){
+    body += '<button data-go="#/'+dom+'/cost/service/'+i+'">'
+      + '<span class="nm">'+esc(s.n)+'</span>'
+      + '<span class="tr" style="width:'+Math.round(s.c/max*124)+'px"></span>'
+      + '<span class="vv">'+NZ(s.c)+'</span></button>';
+  });
+  body += '</div><p class="note">Top five account for '+NZ(top)+' of '+NZ(c.mtd)+' month to date. '
+    + 'The remaining '+NZ(c.other)+' is spread across everything else.</p></div>';
+  return frame(dom,"Azure cost","Cost Management, month to date, grouped by service",body,
+    "Ask JARVIS about this spend","Why is my Azure spend up this month compared to last?");
+}
+
+function viewService(dom, idx){
+  var c = DATA[dom].cost; if(!c) { go("#/"+dom); return ""; }
+  var s = c.services[idx]; if(!s) return viewCost(dom);
+  var top = c.services.reduce(function(a,b){return a+b.c;},0);
+  var body = '<div class="panel"><h3>Month to date</h3><div class="big">'+NZ(s.c)+'</div>'
+    + '<div class="bigsub">rank '+(idx+1)+' of 5 · '+Math.round(s.c/top*100)+'% of the top five · '
+    + Math.round(s.c/c.mtd*100)+'% of total spend</div></div>';
+  return frame(dom, s.n, "Azure service · "+c.cur, body,
+    "Ask JARVIS about this service", "What is driving my Azure "+s.n+" spend this month?");
+}
+
+function viewCredentials(dom){
+  var d = DATA[dom];
+  var body = '<div class="panel"><table><thead><tr><th>Credential</th><th>Status</th><th>Expires</th></tr></thead><tbody>';
+  d.creds.forEach(function(c){
+    body += '<tr><td><button class="rowbtn" data-go="#/'+dom+'/credentials/'+c.ref+'">'
+      + '<span class="mono">'+esc(c.ref)+'</span></button></td>'
+      + '<td>'+pillFor(c.st)+'</td><td style="color:var(--ink-2)">'+esc(c.exp)+'</td></tr>';
+  });
+  body += '</tbody></table></div>';
+  if(d.creds.some(function(c){return c.st==="unmon";}))
+    body += '<p class="note warnish"><b>One credential is not monitored.</b> The Azure app-registration secret has no '
+      + 'credential reference, so the expiry audit never sees it. It will not warn you in advance — it will simply '
+      + 'start failing on the day it lapses.</p>';
+  return frame(dom,"Credentials",d.creds.length+" tracked, worst first",body,
+    "Ask JARVIS about these credentials","Which of my credentials need attention and in what order?");
+}
+
+function viewCredential(dom, ref){
+  var c = DATA[dom].creds.filter(function(x){return x.ref===ref;})[0];
+  if(!c) return viewCredentials(dom);
+  var body = '<div class="panel"><h3>Status</h3><div style="margin-bottom:14px">'+pillFor(c.st)+'</div>'
+    + '<table><tbody>'
+    + '<tr><td style="color:var(--ink-3);width:38%">Expires</td><td>'+esc(c.exp)+'</td></tr>'
+    + '<tr><td style="color:var(--ink-3)">Environment variable</td><td><span class="mono">'+esc(c.env)+'</span></td></tr>'
+    + '<tr><td style="color:var(--ink-3)">Goes dark without it</td><td>'+esc(c.uses)+'</td></tr>'
+    + '</tbody></table></div>';
+  if(c.st==="unmon") body += '<p class="note warnish">This credential is read directly from four environment variables '
+    + 'rather than through the credential store, so it has no expiry to audit. Nothing will warn you before it lapses.</p>';
+  return frame(dom, c.ref, "Credential detail", body,
+    "Ask JARVIS about this credential","What breaks if "+c.ref+" expires, and how do I rotate it?");
+}
+
+function viewModules(dom){
+  var d = DATA[dom], w = WIRED[SCENARIO];
+  if(!w.modules) return frame(dom,"Modules",null,
+    '<div class="hatchblock"><b><span style="color:var(--quiet)">'+ICON.dash+'</span>Roster not published</b>Module health is built from restart counts, so a module that '
+    + 'has never restarted never appears — which on a healthy system means none of them do. The tile reads zero '
+    + 'because nothing is being counted, not because nothing is running.</div>');
+  var body = '<div class="panel"><table><thead><tr><th>Module</th><th>Status</th><th style="text-align:right">Restarts</th></tr></thead><tbody>';
+  d.modules.forEach(function(m){
+    body += '<tr><td><span class="mono">'+esc(m.n)+'</span></td>'
+      + '<td>'+(m.e?'<span class="pill p-ok">'+ICON.ok+'Enabled</span>':'<span class="pill p-ghost">'+ICON.ghost+'Disabled</span>')+'</td>'
+      + '<td style="text-align:right;font-variant-numeric:tabular-nums">'+m.r+'</td></tr>';
+  });
+  body += '</tbody></table><p class="note">“Enabled” means registered and switched on. It does not mean verified working — '
+    + 'that needs a liveness probe per module, which does not exist yet.</p></div>';
+  return frame(dom,"Modules",d.modules.length+" registered",body,
+    "Ask JARVIS about these modules","Are all my modules doing what they should be?");
+}
+
+function viewErrors(dom){
+  var d = DATA[dom], w = WIRED[SCENARIO];
+  var body = "";
+  if(!w.errors){
+    body += '<div class="hatchblock"><b><span style="color:var(--quiet)">'+ICON.dash+'</span>Error counts are not connected</b>The orchestrator starts its cycles without an '
+      + 'error source, so this panel reports zero regardless of what is actually happening. A green zero here means '
+      + 'nothing is being counted.</div>';
+  } else {
+    body += '<div class="panel"><h3>Last 24 hours</h3>'
+      + '<div style="display:flex;gap:28px"><div><div class="big">'+d.errors.fatal+'</div><div class="bigsub">fatal</div></div>'
+      + '<div><div class="big" style="color:var(--ink-2)">'+d.errors.transient+'</div><div class="bigsub">transient</div></div></div></div>';
+  }
+  body += '<div class="panel"><h3>Health reporting</h3>'
+    + '<table><tbody><tr><td style="color:var(--ink-3);width:44%">Last report</td><td>42 seconds ago</td></tr>'
+    + '<tr><td style="color:var(--ink-3)">Interval</td><td>every 5 minutes</td></tr>'
+    + '<tr><td style="color:var(--ink-3)">Stale after</td><td>10 minutes</td></tr></tbody></table></div>';
+  return frame(dom,"Errors and reporting","Operational counts for this domain",body,
+    "Ask JARVIS about these errors","Have there been any errors worth my attention today?");
+}
+
+function viewProposals(dom, pendingOnly){
+  var d = DATA[dom], w = WIRED[SCENARIO];
+  var list = pendingOnly ? d.proposals.filter(function(p){return p.tier==="requires_approval";}) : d.proposals;
+  var body = "";
+  if(pendingOnly && !w.approvals){
+    body += '<div class="hatchblock"><b><span style="color:var(--quiet)">'+ICON.dash+'</span>Nothing reaches this queue</b>The reviewer writes proposals to the database every '
+      + 'cycle, but they are never handed to the approval gate — so this queue is empty for structural reasons, not '
+      + 'because there is nothing to decide. The proposals themselves are real; see the full ledger.</div>';
+  }
+  if(list.length){
+    body += '<div class="panel"><h3>'+(pendingOnly?"Awaiting your decision":"Recent proposals")+'</h3><div class="rank">';
+    list.forEach(function(p){
+      body += '<button data-go="#/'+dom+'/proposals/item/'+p.id+'" style="grid-template-columns:1fr auto">'
+        + '<span style="min-width:0"><span style="display:block;font-size:13.5px;color:var(--ink);white-space:normal;line-height:1.4">'
+        + esc(p.s)+'</span><span style="display:block;font-size:11.5px;color:var(--ink-3);margin-top:3px">'
+        + esc(p.cat)+' · '+esc(p.when)+'</span></span><span class="chev">'+ICON.chev+'</span></button>';
+    });
+    body += '</div></div>';
+  }
+  if(!pendingOnly){
+    body += '<p class="note warnish"><b>Outcomes are not tracked.</b> Nothing ever updates a proposal’s status, and '
+      + '“failed” is not one of the values the database will accept. Every row above stays pending forever, so '
+      + '“N applied / M failed” cannot be shown honestly yet.</p>';
+  }
+  return frame(dom, pendingOnly?"Awaiting your decision":"Self-heal ledger",
+    pendingOnly? null : d.proposals.length+" proposals in the last 24 hours", body,
+    "Ask JARVIS about these proposals","Walk me through the open self-heal proposals and what you'd do about them");
+}
+
+function viewProposal(dom, id){
+  var p = DATA[dom].proposals.filter(function(x){return x.id===id;})[0];
+  if(!p) return viewProposals(dom,false);
+  var body = '<div class="panel"><h3>Proposal</h3>'
+    + '<p style="margin:0 0 15px;font-size:15px;line-height:1.5">'+esc(p.s)+'</p>'
+    + '<table><tbody>'
+    + '<tr><td style="color:var(--ink-3);width:38%">Reference</td><td><span class="mono">'+esc(p.id)+'</span></td></tr>'
+    + '<tr><td style="color:var(--ink-3)">Category</td><td>'+esc(p.cat)+'</td></tr>'
+    + '<tr><td style="color:var(--ink-3)">Trust tier</td><td>'+(p.tier==="requires_approval"
+        ? '<span class="pill p-warn">'+ICON.warn+'Requires approval</span>'
+        : '<span class="pill p-ok">'+ICON.ok+'Auto-fix</span>')+'</td></tr>'
+    + '<tr><td style="color:var(--ink-3)">Raised</td><td>'+esc(p.when)+'</td></tr>'
+    + '<tr><td style="color:var(--ink-3)">Status</td><td><span class="pill p-none">'+ICON.none+'Pending — never updated</span></td></tr>'
+    + '</tbody></table></div>';
+  body += '<p class="note">Approving or rejecting from the dashboard is not available yet. It needs a write path, and a '
+    + 'write path needs authentication in front of this page first.</p>';
+  return frame(dom, p.cat.charAt(0).toUpperCase()+p.cat.slice(1)+" proposal", p.id, body,
+    "Ask JARVIS about this proposal","Explain proposal "+p.id+" and whether I should approve it");
+}
+
+function viewSetup(dom){
+  var checks = buildChecks(dom).filter(function(c){return c.state==="notconf";});
+  var body = "";
+  if(!checks.length){
+    body = '<div class="panel"><p style="margin:0">Everything that can be connected is connected.</p></div>';
+  } else {
+    checks.forEach(function(c){
+      var vars = c.id==="cost"
+        ? ["JARVIS_WORK_AZURE_TENANT_ID","JARVIS_WORK_AZURE_CLIENT_ID","JARVIS_WORK_AZURE_CLIENT_SECRET","JARVIS_WORK_AZURE_SUBSCRIPTION_ID"]
+        : [dom==="work"?"JARVIS_WORK_NZB_M365_OAUTH":"JARVIS_PERSONAL_HOTMAIL_OAUTH"];
+      body += '<div class="panel"><h3>'+esc(c.label)+'</h3>'
+        + '<p style="margin:0 0 12px;font-size:13.5px;color:var(--ink-2)">Unlocks: '
+        + esc(c.id==="cost"?"month-to-date spend, top services, daily trend":"unread and total counts, top senders")+'</p>';
+      vars.forEach(function(v){
+        body += '<div style="display:flex;align-items:center;gap:9px;padding:9px 0;border-top:1px solid var(--line)">'
+          + '<span class="mono" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">'+esc(v)+'</span>'
+          + '<button class="pill p-ghost" data-copy="'+esc(v)+'" style="cursor:pointer;border-style:solid;background:none">Copy</button></div>';
+      });
+      body += '</div>';
+    });
+  }
+  return frame(dom,"Setup","What is not connected, and exactly what connects it",body);
+}
+
+function viewChat(dom){
+  var log = state.chat[dom];
+  var h = '<button class="back" data-go="#/'+dom+'">'+ICON.left+esc(DATA[dom].label)+' overview</button>';
+  h += '<div class="dt-h"><h2>Ask JARVIS about '+esc(DATA[dom].label)+'</h2>'
+     + '<div class="meta">This conversation stays with this domain and is saved</div></div>';
+  h += '<div class="thread">';
+  if(!log.length){
+    h += '<div class="msg j"><span class="who">JARVIS</span>I can see this domain’s health, mail and cost summary. '
+       + 'Ask me about any of it — or drill into something on the dashboard and bring the question here.</div>';
+  }
+  log.forEach(function(m){
+    h += '<div class="msg '+(m.r==="you"?"you":"j")+'"><span class="who">'+(m.r==="you"?"You":"JARVIS")+'</span>'+esc(m.t)+'</div>';
+  });
+  h += '</div>';
+  h += '<div class="composer"><textarea id="ta" rows="1" placeholder="Message JARVIS — paste a screenshot, drop a file, or 📎">'
+     + esc(state.seed) + '</textarea><button class="send" id="send">Send</button></div>';
+  h += '<p class="cnote">Conversation is saved for this domain. Attachments are only visible to JARVIS in the message '
+     + 'you send them — they can’t be reopened later.</p>';
+  state.seed = "";
+  return h;
+}
+
+/* ---------- router ---------- */
+function render(){
+  var hash = location.hash.replace(/^#\/?/,"");
+  var parts = hash ? hash.split("/") : [];
+  var dom = (parts[0]==="work"||parts[0]==="personal") ? parts[0] : state.domain;
+  state.domain = dom;
+  document.body.setAttribute("data-domain",dom);
+  document.querySelectorAll(".seg button").forEach(function(b){
+    b.setAttribute("aria-checked", b.dataset.dom===dom ? "true":"false"); });
+
+  var sec = parts[1] || "", a = parts[2] || "", b = parts[3] || "";
+  var app = document.getElementById("app"), html, wide = false;
+
+  if(sec==="chat"){ html = viewChat(dom); }
+  else if(sec==="mail" && a==="sender"){ html = viewSender(dom, parseInt(b,10)); }
+  else if(sec==="mail"){ html = viewMail(dom); }
+  else if(sec==="cost" && a==="service"){ html = viewService(dom, parseInt(b,10)); }
+  else if(sec==="cost"){ html = viewCost(dom); }
+  else if(sec==="credentials" && a){ html = viewCredential(dom, a); }
+  else if(sec==="credentials"){ html = viewCredentials(dom); }
+  else if(sec==="modules"){ html = viewModules(dom); }
+  else if(sec==="errors"){ html = viewErrors(dom); }
+  else if(sec==="proposals" && a==="item"){ html = viewProposal(dom, b); }
+  else if(sec==="proposals" && a==="pending"){ html = viewProposals(dom, true); }
+  else if(sec==="proposals"){ html = viewProposals(dom, false); }
+  else if(sec==="setup"){ html = viewSetup(dom); }
+  else { html = viewOverview(dom); wide = true; }
+
+  app.className = "wrap" + (wide && state.discOpen ? " wide" : "");
+  document.body.setAttribute("data-depth", sec && sec!=="chat" ? "detail" : "top");
+  app.innerHTML = html;
+  document.querySelectorAll(".tabs button").forEach(function(t){
+    if(sec==="chat") t.setAttribute("aria-current", t.dataset.tab==="chat"?"page":"false");
+    else t.setAttribute("aria-current", t.dataset.tab==="dash"?"page":"false");
+  });
+  var ta = document.getElementById("ta");
+  if(ta){ ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+  window.scrollTo(0, scrollMem[location.hash] || 0);
+}
+
+/* ---------- events ---------- */
+document.addEventListener("click", function(e){
+  var g = e.target.closest("[data-go]");
+  if(g){ go(g.dataset.go); return; }
+
+  var seed = e.target.closest("[data-seed]");
+  if(seed){ state.seed = seed.dataset.seed; go("#/"+state.domain+"/chat"); return; }
+
+  var cp = e.target.closest("[data-copy]");
+  if(cp){
+    navigator.clipboard && navigator.clipboard.writeText(cp.dataset.copy);
+    var t = cp.textContent; cp.textContent = "Copied";
+    setTimeout(function(){ cp.textContent = t; }, 1400);
+    return;
+  }
+
+  var seg = e.target.closest(".seg button");
+  if(seg){ go("#/"+seg.dataset.dom); return; }
+
+  var tab = e.target.closest(".tabs button");
+  if(tab){ go(tab.dataset.tab==="chat" ? "#/"+state.domain+"/chat" : "#/"+state.domain); return; }
+
+  var sc = e.target.closest(".proto button");
+  if(sc){
+    SCENARIO = sc.dataset.sc;
+    document.querySelectorAll(".proto button").forEach(function(x){
+      x.setAttribute("aria-pressed", x.dataset.sc===SCENARIO ? "true":"false"); });
+    render(); return;
+  }
+
+  if(e.target.closest("#send")){
+    var ta = document.getElementById("ta");
+    if(ta && ta.value.trim()){
+      state.chat[state.domain].push({r:"you", t:ta.value.trim()});
+      state.chat[state.domain].push({r:"j", t:"(Prototype — no model is wired up here. In the real console this is where the answer lands, with the domain’s current summary already in context.)"});
+      render();
+    }
+    return;
+  }
+
+  if(e.target.closest("#theme")){
+    var root = document.documentElement;
+    var now = root.getAttribute("data-theme");
+    if(!now){ now = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"; }
+    root.setAttribute("data-theme", now==="dark" ? "light" : "dark");
+    return;
+  }
+});
+
+document.addEventListener("toggle", function(e){
+  if(e.target.classList && e.target.classList.contains("disc")){
+    state.discOpen = e.target.open;
+    document.getElementById("app").className = "wrap" + (e.target.open ? " wide" : "");
+  }
+}, true);
+
+document.addEventListener("keydown", function(e){
+  if(e.key==="Escape" && location.hash.split("/").length > 2) history.back();
+});
+
+window.addEventListener("hashchange", render);
+
+/* freshness ticker */
+var t0 = Date.now();
+setInterval(function(){
+  var s = Math.round((Date.now()-t0)/1000) % 300;
+  document.getElementById("fresh").textContent = "as of " + (s<60 ? s+"s" : Math.floor(s/60)+"m");
+}, 1000);
+
+if(!location.hash) location.hash = "#/work";
+render();
+</script>
