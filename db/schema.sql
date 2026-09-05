@@ -91,6 +91,20 @@ create table if not exists work.relations (
 create index if not exists idx_work_relations_from on work.relations (from_memory);
 create index if not exists idx_work_relations_to on work.relations (to_memory);
 
+-- JARVIS chat feature (Phase 2): persisted per-domain conversation history.
+-- attachments is METADATA ONLY (filename/mediaType/sizeBytes) — never raw
+-- bytes, content, or a URI. See src/domain/chatHistoryStore.ts.
+create table if not exists work.chat_history (
+  id              uuid primary key default gen_random_uuid(),
+  conversation_id uuid not null,
+  role            text not null check (role in ('user', 'assistant')),
+  content         text not null,
+  attachments     jsonb not null default '[]',
+  created_at      timestamptz not null default now()
+);
+create index if not exists idx_work_chat_history_conversation_time
+  on work.chat_history (conversation_id, created_at);
+
 -- ------------------------------------------------------------ personal --
 create schema if not exists personal;
 
@@ -131,6 +145,17 @@ create table if not exists personal.relations (
 );
 create index if not exists idx_personal_relations_from on personal.relations (from_memory);
 create index if not exists idx_personal_relations_to on personal.relations (to_memory);
+
+create table if not exists personal.chat_history (
+  id              uuid primary key default gen_random_uuid(),
+  conversation_id uuid not null,
+  role            text not null check (role in ('user', 'assistant')),
+  content         text not null,
+  attachments     jsonb not null default '[]',
+  created_at      timestamptz not null default now()
+);
+create index if not exists idx_personal_chat_history_conversation_time
+  on personal.chat_history (conversation_id, created_at);
 
 -- =========================================================================
 -- Roles: one login role per domain, each grantable ONLY on its own schema

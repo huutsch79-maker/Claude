@@ -78,6 +78,88 @@ a personal Pushover key, and vice versa.
 - No shared memory or credentials between domains — enforced at the code,
   connection-pool, and database-role layers described above.
 
+## Dashboard
+
+`src/dashboard/**` is an in-process `node:http` server (no framework, no
+build step — the whole page is one exported HTML template literal in
+`page.ts`) started from `src/orchestrator/index.ts` alongside the
+orchestrator itself. It was deliberately built in-process rather than as a
+separate service: a separate process would need its own channel to reach
+`DomainManager`'s state, and any such channel is a new place the isolation
+boundary could leak. In-process, the dashboard reads the exact same
+in-memory objects the orchestrator already holds, through one narrow
+adapter (`src/orchestrator/dashboardSource.ts`) — the only file allowed to
+import both `DomainManager` and the dashboard's own types.
+
+**The same belt-and-braces pattern as `OperationalMetadata` (above)
+extends to everything the dashboard shows.** `src/dashboard/**` is
+structurally forbidden from importing any domain-internal store —
+`Domain.js`, `memoryStore.js`, `relationsStore.js`, `credentialStore.js`,
+`capabilityRegistry.js`, `db.js`, or `pg` directly — enforced by a
+static-analysis test (`test/dashboard.test.ts`) that scans every file under
+`src/dashboard/` for those import strings. Every JSON response is
+whitelist-validated (keys *and* value types/enums, not just key names) by
+`assertDashboardPayloadShape` before it ever reaches the socket.
+
+**`DomainContentSummary`** (`src/orchestrator/domainContentSummary.ts`) is
+a second channel built the same way `OperationalMetadata` was: a real,
+per-domain mail summary (`MailSummary` — unread/total counts, top 5
+senders, capped and length-truncated) and, work-domain only, an Azure cost
+slice (`AzureCostSummary` — month-to-date spend, top 5 services).
+`azureCost` is hardcoded `null` for the personal domain — not
+data-driven — so there's no code path where a personal-domain request
+could ever produce Azure data. Fetched real-Graph-API/real-ARM-API by
+`src/modules/personal/hotmail/summary.ts`,
+`src/modules/work/nzb-connector/summary.ts`, and
+`src/modules/work/nzb-connector/azureCost.ts`, on a coarser cadence
+(`JARVIS_CONTENT_INTERVAL_MS`, default 15 min) than health, published to a
+`ContentBus` mirroring `OperationalBus`. A connector that can't authenticate
+(missing env vars) reports `status: "not_configured"` rather than
+attempting a call — the dashboard renders that as a distinct, honest empty
+state (no numeral at all, not a zero) rather than a fake value or an error.
+
+**The Azure Cost Management credential is a deliberate exception to
+`CredentialStore`'s pattern.** It's a 4-part ARM client-credentials
+app registration (tenant/client/secret/subscription), which doesn't fit
+`CredentialStore.get(ref)`'s single-token-plus-expiry shape. Rather than
+force it into a JSON blob, `azureCost.ts` reads four raw env vars directly
+under the `JARVIS_WORK_AZURE_*` prefix — still domain-isolated by naming
+convention and by `azureCost` being hardcoded `null` on personal, just not
+by construction the way `CredentialStore` normally guarantees. One
+consequence: this credential has no `credential_ref`, so
+`SecurityAccess.auditCredentials()` never surfaces its expiry on the health
+panel — a failure shows up as `status: "error"` on next use, not as an
+advance warning.
+
+**Chat** (`src/dashboard/chat.ts`) is strictly one domain per conversation
+— never both at once. That's enforced structurally, not just by
+convention: `POST /api/chat/:domain` and `GET /api/chat/:domain/history`
+each resolve one `DomainId` and never touch the other domain's
+`ChatHistoryStore` instance. It talks to the Anthropic Messages API
+directly (`ANTHROPIC_API_KEY`), not through `Reviewer`/`CapabilityRegistry`
+— a deliberate scope boundary, not an oversight: routing chat through the
+real capability system so it could take actions (send mail, look up a
+Dynamics record) would need its own trust-tier classification and
+approval-gate integration for whatever it's allowed to do, which is a
+follow-up-sized feature in its own right. This pass ships a conversational
+assistant that can see that domain's own `DomainContentSummary` as context,
+not one that can act on your behalf.
+
+Chat history persists per-domain in Postgres —
+`{work,personal}.chat_history` (`db/schema.sql`), same
+schema-per-domain-role pattern as `memory`/`relations`/`capabilities` — via
+`src/domain/chatHistoryStore.ts`. Attachment *metadata* (filename, media
+type, size) is persisted; attachment *bytes* never are, so an image or PDF
+is only usable by the model in the turn it was sent — a reload shows that a
+file was attached, not its content. Storage trims to the most recent 500
+rows per domain on every write; separately, only the last 20 messages of
+the *current* conversation (a 24-hour gap starts a new one) are replayed to
+the model as context — a stricter, conversation-scoped read
+(`ChatHistoryStore.recentForContext`) than the domain-wide read used to
+render the visible transcript (`recentForDisplay`), so an old conversation
+can never leak into a new one's context even though both remain visible in
+history.
+
 ## Extending to a third domain
 
 Add one entry to `src/config/domains.ts`, copy one of the `work` /
