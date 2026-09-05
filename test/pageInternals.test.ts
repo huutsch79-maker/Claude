@@ -164,6 +164,36 @@ describe("page.ts — five-state resolver", () => {
     expect(resolveContentState(d, "mail")).toBe("notconf");
   });
 
+  it("a domain with no Azure subscription shows no cost panel even before its first report", () => {
+    // The bug this pins: resolveContentState used to return "awaiting" the
+    // moment content was null, before it could see that azureCost would be
+    // null anyway — so for the whole first interval after a restart the
+    // personal domain rendered an "Azure month to date" tile. Whether a cost
+    // panel exists is structural (DOMAINS[id].hasAzureCost), not something to
+    // be learned from a content report that has not arrived.
+    const { resolveContentState, buildChecks, renderEverythingElse, computeVerdict, setCurrentDomain } = loadInternals();
+    setCurrentDomain("personal");
+    const awaitingPersonal = domainState({ domain: "personal", content: null });
+
+    expect(resolveContentState(awaitingPersonal, "azureCost")).toBe("na");
+    expect(resolveContentState(awaitingPersonal, "mail")).toBe("awaiting");
+
+    const checks = buildChecks(awaitingPersonal);
+    expect(checks.find((c) => c.id === "cost")?.state).toBe("na");
+    expect(computeVerdict(checks).total).toBe(6);
+
+    const html = renderEverythingElse(awaitingPersonal, checks, "personal");
+    expect(html).not.toContain("Azure month to date");
+  });
+
+  it("work still shows an awaiting cost tile before its first report", () => {
+    const { resolveContentState, renderEverythingElse, buildChecks } = loadInternals();
+    const awaitingWork = domainState({ content: null });
+    expect(resolveContentState(awaitingWork, "azureCost")).toBe("awaiting");
+    const html = renderEverythingElse(awaitingWork, buildChecks(awaitingWork), "work");
+    expect(html).toContain("Azure month to date");
+  });
+
   it("a structurally-absent sub-summary (personal has no Azure cost) is na, not notconf", () => {
     const { resolveContentState } = loadInternals();
     const d = domainState({

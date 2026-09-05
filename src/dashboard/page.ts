@@ -14,6 +14,16 @@ const DOMAIN_LABELS_JSON = JSON.stringify(
   Object.fromEntries(DOMAIN_IDS.map((id) => [id, DOMAINS[id].label])),
 );
 
+/**
+ * Which domains have an Azure subscription at all, from the same config
+ * Domain.ts reads. Structural, so the page can answer "does a cost panel
+ * exist here" without a content report — otherwise a domain with no Azure
+ * shows an awaiting cost tile for the whole first interval after a restart.
+ */
+const DOMAIN_HAS_COST_JSON = JSON.stringify(
+  Object.fromEntries(DOMAIN_IDS.map((id) => [id, DOMAINS[id].hasAzureCost])),
+);
+
 function escapeForTemplate(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 }
@@ -411,6 +421,7 @@ export const DASHBOARD_HTML: string = `<!doctype html>
 <script>
 (function () {
   var DOMAIN_LABELS = ${DOMAIN_LABELS_JSON};
+  var DOMAIN_HAS_COST = ${DOMAIN_HAS_COST_JSON};
   var POLL_MS = 5000;
   var MAX_IMAGE_BYTES = 5 * 1024 * 1024;
   var MAX_IMAGES = 5;
@@ -536,6 +547,11 @@ export const DASHBOARD_HTML: string = `<!doctype html>
    * structurally has no such channel (personal never has Azure cost).
    */
   function resolveContentState(d, key) {
+    // Structural first: a domain with no Azure subscription has no cost
+    // panel at all, and must not show one even transiently while its first
+    // content report is in flight.
+    var dom = (d && d.domain) ? d.domain : currentDomain;
+    if (key === "azureCost" && DOMAIN_HAS_COST[dom] !== true) return "na";
     if (!d) return "awaiting";
     if (d.content === null || d.content === undefined) return "awaiting";
     var sub = d.content[key];

@@ -94,9 +94,10 @@ export class DomainInstance {
    * into "error" by the fetcher itself, and the outer try/catch here is
    * defense in depth on top of that.
    *
-   * azureCost is hardcoded to null for every domain except work — not
-   * data-driven — so a bug in fetchAzureCostSummary can never cause the
-   * personal domain to report Azure spend.
+   * azureCost is null for every domain whose config declares
+   * hasAzureCost: false — a structural fact, not data-driven — so a bug in
+   * fetchAzureCostSummary can never cause the personal domain to report
+   * Azure spend.
    */
   async reportContentSummary(): Promise<DomainContentSummary> {
     const reportedAt = new Date().toISOString();
@@ -112,7 +113,7 @@ export class DomainInstance {
     }
 
     let azureCost: AzureCostSummary | null = null;
-    if (this.config.id === "work") {
+    if (this.config.hasAzureCost) {
       try {
         azureCost = await fetchAzureCostSummary();
       } catch {
