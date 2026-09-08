@@ -4,7 +4,13 @@ import type { DomainContentSummary } from "../orchestrator/domainContentSummary.
 
 /** No routing through Reviewer/CapabilityRegistry — chat cannot take real actions this pass. */
 const CHAT_MODEL = "claude-opus-5";
-const CHAT_MAX_TOKENS = 4096;
+/**
+ * 16000, not 4096. At 4096 a normal "summarise what's been arriving in my
+ * inbox" answer can hit the cap and come back truncated mid-sentence, which
+ * looks like a broken reply rather than a length limit. Non-streaming, so
+ * this stays under the SDK's HTTP timeout.
+ */
+const CHAT_MAX_TOKENS = 16000;
 
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 export const MAX_IMAGES_PER_MESSAGE = 5;
@@ -224,8 +230,10 @@ export class AnthropicChatBackend implements ChatBackend {
     apiKey: string,
     private readonly getContentSummary: (domainId: DomainId) => DomainContentSummary | null,
     private readonly getDomainLabel: (domainId: DomainId) => string,
+    /** Injectable for tests, mirroring the fetchImpl parameter the mail/cost fetchers already take. */
+    client?: Anthropic,
   ) {
-    this.client = new Anthropic({ apiKey });
+    this.client = client ?? new Anthropic({ apiKey });
   }
 
   async send(
@@ -271,6 +279,16 @@ export class AnthropicChatBackend implements ChatBackend {
       .filter((block): block is Anthropic.TextBlock => block.type === "text")
       .map((block) => block.text)
       .join("\n");
+
+    // Same rule the dashboard follows: never hand back something incomplete
+    // dressed as a finished answer. A reply cut off at the token cap, or one
+    // the model declined, has to say so.
+    if (response.stop_reason === "max_tokens") {
+      return { text: text + "\n\n[Cut off at the length limit — ask something narrower to get the rest.]" };
+    }
+    if (response.stop_reason === "refusal") {
+      return { text: text || "JARVIS declined to answer that." };
+    }
     return { text };
   }
 }

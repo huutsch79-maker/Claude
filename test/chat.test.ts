@@ -3,6 +3,7 @@ import {
   MAX_DOCUMENT_BYTES,
   MAX_IMAGES_PER_MESSAGE,
   MAX_IMAGE_BYTES,
+  AnthropicChatBackend,
   buildSystemPrompt,
   validateAttachments,
   type ChatAttachmentInput,
@@ -186,5 +187,41 @@ describe("buildSystemPrompt", () => {
   it("omits Azure cost line entirely for the personal domain (azureCost: null)", () => {
     const prompt = buildSystemPrompt("Personal", content({ domain: "personal", azureCost: null }));
     expect(prompt).not.toContain("Azure cost");
+  });
+});
+
+describe("AnthropicChatBackend stop_reason handling", () => {
+  function backendWith(stopReason: string, text: string) {
+    const fakeClient = {
+      messages: {
+        create: async () => ({
+          content: text ? [{ type: "text", text }] : [],
+          stop_reason: stopReason,
+        }),
+      },
+    };
+    return new AnthropicChatBackend(
+      "unused",
+      () => null,
+      () => "Test",
+      fakeClient as never,
+    );
+  }
+
+  it("a normal reply comes back unchanged", async () => {
+    const reply = await backendWith("end_turn", "41 unread.").send("work", "how many?", [], []);
+    expect(reply.text).toBe("41 unread.");
+  });
+
+  it("a reply cut off at the token cap says so, rather than looking finished", async () => {
+    const reply = await backendWith("max_tokens", "Your top senders are").send("work", "summarise", [], []);
+    expect(reply.text).toContain("Your top senders are");
+    expect(reply.text).toContain("Cut off at the length limit");
+  });
+
+  it("a refusal is surfaced, never returned as an empty answer", async () => {
+    const reply = await backendWith("refusal", "").send("work", "do something", [], []);
+    expect(reply.text.length).toBeGreaterThan(0);
+    expect(reply.text).toContain("declined");
   });
 });
