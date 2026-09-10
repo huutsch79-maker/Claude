@@ -18,7 +18,9 @@ async function main(): Promise<void> {
   manager.bus.onPublish((metadata) => {
     console.log(`[health] ${metadata.domain} @ ${metadata.reportedAt}: ` +
       `${metadata.moduleHealth.length} module(s) tracked, ` +
-      `${metadata.errorCounts.fatal24h} fatal / ${metadata.errorCounts.transient24h} transient errors (24h)`);
+      (metadata.errorCounts.measured
+        ? `${metadata.errorCounts.fatal24h} fatal / ${metadata.errorCounts.transient24h} transient errors (24h)`
+        : "errors not measured (no error source connected)"));
   });
 
   manager.startScheduledCycles();

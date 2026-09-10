@@ -80,7 +80,7 @@ function buildDomainState(
       awaitingFirstReport: true,
       moduleHealth: [],
       credentialStatus: [],
-      errorCounts: { transient24h: 0, fatal24h: 0 },
+      errorCounts: { measured: false, transient24h: 0, fatal24h: 0 },
       approvals,
       totalPending,
       content: contentPayload,

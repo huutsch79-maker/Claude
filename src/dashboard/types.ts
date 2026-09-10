@@ -107,7 +107,7 @@ export interface DashboardStatePayload {
 const APPROVAL_KEYS = new Set(["id", "kind", "summary", "proposedAt"]);
 const MODULE_HEALTH_KEYS = new Set(["moduleId", "status", "lastRestartAt", "restartCount24h"]);
 const CREDENTIAL_STATUS_KEYS = new Set(["credentialRef", "status", "expiresAt"]);
-const ERROR_COUNT_KEYS = new Set(["transient24h", "fatal24h"]);
+const ERROR_COUNT_KEYS = new Set(["measured", "transient24h", "fatal24h"]);
 const DOMAIN_STATE_KEYS = new Set([
   "domain",
   "reportedAt",
@@ -190,6 +190,7 @@ export function assertDashboardPayloadShape(value: unknown): asserts value is Da
 
     assertOnlyKeys(d.errorCounts, ERROR_COUNT_KEYS, "errorCounts");
     const errorCounts = d.errorCounts as Record<string, unknown>;
+    assertBoolean(errorCounts.measured, "errorCounts: measured");
     assertFiniteNumber(errorCounts.transient24h, "errorCounts: transient24h");
     assertFiniteNumber(errorCounts.fatal24h, "errorCounts: fatal24h");
 

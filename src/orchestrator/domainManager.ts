@@ -34,7 +34,13 @@ export class DomainManager {
     return domain;
   }
 
-  startScheduledCycles(getErrorLog: (domainId: DomainId) => ErrorLogCounts = () => ({ transient24h: 0, fatal24h: 0 })): void {
+  // The default reports measured:false rather than a zero that looks like a
+  // reading. index.ts calls this with no argument, so until an error source
+  // is wired up every cycle runs on this default — and the reviewer now
+  // raises that as a finding instead of comparing a constant to a threshold.
+  startScheduledCycles(
+    getErrorLog: (domainId: DomainId) => ErrorLogCounts = () => ({ measured: false, transient24h: 0, fatal24h: 0 }),
+  ): void {
     for (const domain of this.domains.values()) {
       this.scheduler.every(
         REVIEWER_INTERVAL_MS,

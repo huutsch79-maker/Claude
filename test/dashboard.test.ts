@@ -25,7 +25,7 @@ function validMetadata(domain: DomainId): OperationalMetadata {
     reportedAt: new Date().toISOString(),
     moduleHealth: [{ moduleId: "m1", status: "healthy", lastRestartAt: null, restartCount24h: 0 }],
     credentialStatus: [{ credentialRef: "ref1", status: "valid", expiresAt: null }],
-    errorCounts: { transient24h: 0, fatal24h: 0 },
+    errorCounts: { measured: true, transient24h: 0, fatal24h: 0 },
   };
 }
 
@@ -204,7 +204,7 @@ describe("dashboard payload shape", () => {
           awaitingFirstReport: false,
           moduleHealth: [{ moduleId: { leaked: "conversation excerpt" }, status: "healthy", lastRestartAt: null, restartCount24h: 0 }],
           credentialStatus: [],
-          errorCounts: { transient24h: 0, fatal24h: 0 },
+          errorCounts: { measured: true, transient24h: 0, fatal24h: 0 },
           approvals: [],
           totalPending: 0,
         },
@@ -224,7 +224,7 @@ describe("dashboard payload shape", () => {
           awaitingFirstReport: false,
           moduleHealth: [{ moduleId: "m1", status: "not-a-real-status", lastRestartAt: null, restartCount24h: 0 }],
           credentialStatus: [],
-          errorCounts: { transient24h: 0, fatal24h: 0 },
+          errorCounts: { measured: true, transient24h: 0, fatal24h: 0 },
           approvals: [],
           totalPending: 0,
         },
@@ -241,7 +241,7 @@ describe("dashboard payload shape", () => {
       awaitingFirstReport: false,
       moduleHealth: [],
       credentialStatus: [],
-      errorCounts: { transient24h: 0, fatal24h: 0 },
+      errorCounts: { measured: true, transient24h: 0, fatal24h: 0 },
       approvals: [],
       totalPending: 0,
     };
@@ -249,7 +249,7 @@ describe("dashboard payload shape", () => {
     expect(() => assertDashboardPayloadShape({ domains: [{ ...baseDomain, ageMs: Infinity }] })).toThrow(/ageMs must be a finite number/);
     expect(() =>
       assertDashboardPayloadShape({
-        domains: [{ ...baseDomain, ageMs: 0, errorCounts: { transient24h: NaN, fatal24h: 0 } }],
+        domains: [{ ...baseDomain, ageMs: 0, errorCounts: { measured: true, transient24h: NaN, fatal24h: 0 } }],
       }),
     ).toThrow(/transient24h must be a finite number/);
   });
@@ -291,7 +291,7 @@ describe("dashboard payload shape", () => {
     expect(Object.keys(domainEntry.credentialStatus[0]!).sort()).toEqual(
       ["credentialRef", "status", "expiresAt"].sort(),
     );
-    expect(Object.keys(domainEntry.errorCounts).sort()).toEqual(["transient24h", "fatal24h"].sort());
+    expect(Object.keys(domainEntry.errorCounts).sort()).toEqual(["measured", "transient24h", "fatal24h"].sort());
     expect(Object.keys(domainEntry.approvals[0]!).sort()).toEqual(["id", "kind", "summary", "proposedAt"].sort());
 
     // content and every nesting level within it, mirroring the health-side assertions above.
@@ -337,7 +337,7 @@ describe("domain content payload shape", () => {
           awaitingFirstReport: false,
           moduleHealth: [],
           credentialStatus: [],
-          errorCounts: { transient24h: 0, fatal24h: 0 },
+          errorCounts: { measured: true, transient24h: 0, fatal24h: 0 },
           approvals: [],
           totalPending: 0,
           content: { ...validContent("work"), debugContext: "conversation excerpt" },
@@ -358,7 +358,7 @@ describe("domain content payload shape", () => {
           awaitingFirstReport: false,
           moduleHealth: [],
           credentialStatus: [],
-          errorCounts: { transient24h: 0, fatal24h: 0 },
+          errorCounts: { measured: true, transient24h: 0, fatal24h: 0 },
           approvals: [],
           totalPending: 0,
           content: { ...validContent("work"), mail: { ...validMailSummary(), rawSubjectLine: "leaked email subject" } },
@@ -379,7 +379,7 @@ describe("domain content payload shape", () => {
           awaitingFirstReport: false,
           moduleHealth: [],
           credentialStatus: [],
-          errorCounts: { transient24h: 0, fatal24h: 0 },
+          errorCounts: { measured: true, transient24h: 0, fatal24h: 0 },
           approvals: [],
           totalPending: 0,
           content: { ...validContent("work"), azureCost: { ...validAzureCostSummary(), invoiceId: "leaked billing id" } },
@@ -400,7 +400,7 @@ describe("domain content payload shape", () => {
           awaitingFirstReport: false,
           moduleHealth: [],
           credentialStatus: [],
-          errorCounts: { transient24h: 0, fatal24h: 0 },
+          errorCounts: { measured: true, transient24h: 0, fatal24h: 0 },
           approvals: [],
           totalPending: 0,
           content: {
@@ -424,7 +424,7 @@ describe("domain content payload shape", () => {
           awaitingFirstReport: false,
           moduleHealth: [],
           credentialStatus: [],
-          errorCounts: { transient24h: 0, fatal24h: 0 },
+          errorCounts: { measured: true, transient24h: 0, fatal24h: 0 },
           approvals: [],
           totalPending: 0,
           content: {
@@ -448,7 +448,7 @@ describe("domain content payload shape", () => {
           awaitingFirstReport: false,
           moduleHealth: [],
           credentialStatus: [],
-          errorCounts: { transient24h: 0, fatal24h: 0 },
+          errorCounts: { measured: true, transient24h: 0, fatal24h: 0 },
           approvals: [],
           totalPending: 0,
           content: { ...validContent("work"), mail: { ...validMailSummary(), status: "definitely-not-real" } },
@@ -469,7 +469,7 @@ describe("domain content payload shape", () => {
           awaitingFirstReport: false,
           moduleHealth: [],
           credentialStatus: [],
-          errorCounts: { transient24h: 0, fatal24h: 0 },
+          errorCounts: { measured: true, transient24h: 0, fatal24h: 0 },
           approvals: [],
           totalPending: 0,
           content: {
@@ -491,7 +491,7 @@ describe("domain content payload shape", () => {
       awaitingFirstReport: false,
       moduleHealth: [],
       credentialStatus: [],
-      errorCounts: { transient24h: 0, fatal24h: 0 },
+      errorCounts: { measured: true, transient24h: 0, fatal24h: 0 },
       approvals: [],
       totalPending: 0,
     };
@@ -523,7 +523,7 @@ describe("domain content payload shape", () => {
           awaitingFirstReport: false,
           moduleHealth: [],
           credentialStatus: [],
-          errorCounts: { transient24h: 0, fatal24h: 0 },
+          errorCounts: { measured: true, transient24h: 0, fatal24h: 0 },
           approvals: [],
           totalPending: 0,
           content: validContent("personal"),
@@ -543,7 +543,7 @@ describe("domain content payload shape", () => {
           awaitingFirstReport: false,
           moduleHealth: [],
           credentialStatus: [],
-          errorCounts: { transient24h: 0, fatal24h: 0 },
+          errorCounts: { measured: true, transient24h: 0, fatal24h: 0 },
           approvals: [],
           totalPending: 0,
           content: { ...validContent("work"), mail: { ...validMailSummary(), topSenders: tooManySenders } },
@@ -651,7 +651,9 @@ describe("dashboard read model", () => {
       expect(d.awaitingFirstReport).toBe(true);
       expect(d.moduleHealth).toEqual([]);
       expect(d.credentialStatus).toEqual([]);
-      expect(d.errorCounts).toEqual({ transient24h: 0, fatal24h: 0 });
+      // measured:false, not a bare zero — a domain that has never reported
+      // has not measured zero errors, it has measured nothing.
+      expect(d.errorCounts).toEqual({ measured: false, transient24h: 0, fatal24h: 0 });
       expect(d.approvals).toEqual([]);
       expect(d.totalPending).toBe(0);
     }

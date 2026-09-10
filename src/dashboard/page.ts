@@ -622,9 +622,20 @@ export const DASHBOARD_HTML: string = `<!doctype html>
    * would under-report real data, which is the opposite of the point.
    */
   var UNMEASURED = {
-    errors: "no error source is connected, so this always reads zero",
     approvals: "proposals never reach the approval gate"
   };
+
+  /**
+   * Errors used to be declared unmeasured in the map above, because the
+   * payload could not say so. It can now — errorCounts.measured is false
+   * whenever no error source is connected — so this reads the fact off the
+   * wire instead of the page asserting it from the side. That is the shape
+   * every entry in UNMEASURED should eventually take: delete the entry, and
+   * derive it from something the backend actually stated.
+   */
+  function errorsMeasured(d) {
+    return !!(d && d.errorCounts && d.errorCounts.measured === true);
+  }
 
   // ---------------- check registry ----------------
 
@@ -733,10 +744,11 @@ export const DASHBOARD_HTML: string = `<!doctype html>
     }
 
     // 6. errors
-    if (UNMEASURED.errors) {
-      push("errors", "Errors 24h", "unmeasured", "Error log not connected", UNMEASURED.errors, base + "/errors");
+    if (!errorsMeasured(d)) {
+      push("errors", "Errors 24h", "unmeasured", "Error log not connected",
+        "no error source is connected, so nothing is counting", base + "/errors");
     } else {
-      var ec = (d && d.errorCounts) || { fatal24h: 0, transient24h: 0 };
+      var ec = d.errorCounts;
       push("errors", "Errors 24h", ec.fatal24h > 0 ? "blocking" : "ok",
         ec.fatal24h + " fatal, " + ec.transient24h + " transient", null, base + "/errors");
     }
@@ -755,6 +767,18 @@ export const DASHBOARD_HTML: string = `<!doctype html>
   }
 
   var MEASURED_STATES = { ok: 1, attention: 1, blocking: 1 };
+
+  /**
+   * Which checks represent an external integration Alex can connect by
+   * supplying credentials. The Setup card used to infer this as "not na and
+   * not unmeasured", which was only ever right by accident: errors and
+   * approvals happened to be permanently unmeasured, so they never showed
+   * up. The moment errors became measurable it appeared in Setup as a
+   * "connected" row, which is meaningless — there is no credential that
+   * turns error counting on. Naming the two real integrations is honest and
+   * cannot drift the same way.
+   */
+  var CONNECTABLE = { mail: true, cost: true };
 
   /**
    * Ranking, worst first: a real finding always outranks "still loading".
@@ -839,7 +863,7 @@ export const DASHBOARD_HTML: string = `<!doctype html>
    * labels — a dimmed label reads as disabled, a full one reads as a to-do.
    */
   function renderSetupCard(checks, dom) {
-    var connectable = checks.filter(function (c) { return c.state !== "na" && c.state !== "unmeasured"; });
+    var connectable = checks.filter(function (c) { return CONNECTABLE[c.id] === true && c.state !== "na"; });
     var notconf = connectable.filter(function (c) { return c.state === "notconf"; });
     if (!notconf.length || !connectable.length) return "";
 
@@ -951,10 +975,10 @@ export const DASHBOARD_HTML: string = `<!doctype html>
       h += unmeasuredCell("Modules", "only modules that have restarted are ever published");
     }
 
-    if (UNMEASURED.errors) {
-      h += unmeasuredCell("Errors 24h", UNMEASURED.errors);
+    if (!errorsMeasured(d)) {
+      h += unmeasuredCell("Errors 24h", "no error source is connected, so nothing is counting");
     } else {
-      var ec = (d && d.errorCounts) || { fatal24h: 0, transient24h: 0 };
+      var ec = d.errorCounts;
       h += cell("Errors 24h", '<span class="vl">' + ec.fatal24h + '</span><span class="delta">' +
         ec.transient24h + ' transient</span>', null, base + "/errors");
     }
@@ -1206,12 +1230,12 @@ export const DASHBOARD_HTML: string = `<!doctype html>
 
   function viewErrors(dom, d) {
     var body = "";
-    if (UNMEASURED.errors) {
+    if (!errorsMeasured(d)) {
       body += stateBlock("dash", "Error counts are not connected",
-        "The orchestrator starts its cycles without an error source, so this reports zero regardless of what is " +
-        "actually happening. A green zero here would mean nothing is being counted.");
+        "The orchestrator is running without an error source, so nothing is counting. The payload says so " +
+        "explicitly rather than sending a zero that would look like a clean reading.");
     } else {
-      var ec = (d && d.errorCounts) || { fatal24h: 0, transient24h: 0 };
+      var ec = d.errorCounts;
       body += '<div class="panel"><h3>Last 24 hours</h3><div style="display:flex;gap:28px">' +
         '<div><div class="big">' + ec.fatal24h + '</div><div class="bigsub">fatal</div></div>' +
         '<div><div class="big" style="color:var(--muted)">' + ec.transient24h + '</div><div class="bigsub">transient</div></div>' +
@@ -1791,6 +1815,8 @@ export const DASHBOARD_HTML: string = `<!doctype html>
       stateBlock: stateBlock,
       relativeIso: relativeIso,
       UNMEASURED: UNMEASURED,
+      CONNECTABLE: CONNECTABLE,
+      errorsMeasured: errorsMeasured,
       setCurrentDomain: function (d) { currentDomain = d; }
     };
   } else {

@@ -132,7 +132,7 @@ function domainState(overrides: Partial<DomainStatePayload> = {}): DomainStatePa
     awaitingFirstReport: false,
     moduleHealth: [{ moduleId: "nzb-connector", status: "healthy", lastRestartAt: null, restartCount24h: 0 }],
     credentialStatus: [{ credentialRef: "nzb-m365", status: "valid", expiresAt: null }],
-    errorCounts: { transient24h: 0, fatal24h: 0 },
+    errorCounts: { measured: true, transient24h: 0, fatal24h: 0 },
     approvals: [],
     totalPending: 0,
     content: {
@@ -300,14 +300,41 @@ describe("page.ts — check registry", () => {
     expect(computeVerdict(checks).total).toBe(work.total - 1);
   });
 
-  it("errors and approvals are reported as unmeasured, because nothing produces them", () => {
+  it("approvals is still declared unmeasured, because nothing produces it", () => {
     const { buildChecks, UNMEASURED } = loadInternals();
-    // If either producer is wired up, its UNMEASURED entry must be deleted —
-    // this test is the reminder, and it fails loudly if the entry is stale.
-    expect(Object.keys(UNMEASURED).sort()).toEqual(["approvals", "errors"]);
-    const checks = buildChecks(domainState());
-    expect(checks.find((c) => c.id === "errors")?.state).toBe("unmeasured");
-    expect(checks.find((c) => c.id === "approvals")?.state).toBe("unmeasured");
+    // If the producer is wired up, this entry must be deleted — the test is
+    // the reminder, and it fails loudly if the entry goes stale.
+    expect(Object.keys(UNMEASURED)).toEqual(["approvals"]);
+    expect(buildChecks(domainState()).find((c) => c.id === "approvals")?.state).toBe("unmeasured");
+  });
+
+  it("errors is DERIVED from what the payload says, not declared by the page", () => {
+    // This is the shape every UNMEASURED entry should end up in: the backend
+    // states whether it measured, and the page renders that rather than
+    // asserting it from the side where it can silently go stale.
+    const { buildChecks, UNMEASURED } = loadInternals();
+    expect(UNMEASURED).not.toHaveProperty("errors");
+
+    const unmeasured = buildChecks(domainState({ errorCounts: { measured: false, transient24h: 0, fatal24h: 0 } }));
+    expect(unmeasured.find((c) => c.id === "errors")?.state).toBe("unmeasured");
+
+    const clean = buildChecks(domainState({ errorCounts: { measured: true, transient24h: 0, fatal24h: 0 } }));
+    expect(clean.find((c) => c.id === "errors")?.state).toBe("ok");
+
+    const fatal = buildChecks(domainState({ errorCounts: { measured: true, transient24h: 0, fatal24h: 2 } }));
+    expect(fatal.find((c) => c.id === "errors")?.state).toBe("blocking");
+  });
+
+  it("a measured zero and an unmeasured zero are not the same screen", () => {
+    const { renderEverythingElse, buildChecks } = loadInternals();
+    const measured = domainState({ errorCounts: { measured: true, transient24h: 0, fatal24h: 0 } });
+    const notMeasured = domainState({ errorCounts: { measured: false, transient24h: 0, fatal24h: 0 } });
+
+    expect(renderEverythingElse(measured, buildChecks(measured), "work")).toContain('class="vl">0<');
+    const blank = renderEverythingElse(notMeasured, buildChecks(notMeasured), "work");
+    const errorsCell = blank.slice(blank.indexOf("Errors 24h") - 100, blank.indexOf("Errors 24h") + 300);
+    expect(errorsCell).not.toContain('class="vl">0<');
+    expect(errorsCell).toContain("Not measured");
   });
 
   it("an empty module roster is unmeasured, not 'zero modules'", () => {
@@ -439,7 +466,7 @@ describe("page.ts — overview composition", () => {
     expect(html.indexOf("Connected")).toBeLessThan(html.indexOf("Connect <svg"));
   });
 
-  it("the Setup card never counts unmeasured checks as things Alex can connect", () => {
+  it("the Setup card only lists real integrations, never checks with no credential to supply", () => {
     const { renderSetupCard, buildChecks } = loadInternals();
     const d = domainState({ content: { domain: "work", reportedAt: new Date().toISOString(), mail: mail({ status: "not_configured" }), azureCost: azure() } });
     const html = renderSetupCard(buildChecks(d), "work");
@@ -488,11 +515,12 @@ describe("page.ts — detail views degrade honestly", () => {
     expect(html).toContain("absence of measurement");
   });
 
-  it("errors detail refuses to present its zero as a measurement", () => {
+  it("errors detail refuses to present an unmeasured zero as a measurement", () => {
     const { viewErrors } = loadInternals();
-    const html = viewErrors("work", domainState());
+    const html = viewErrors("work", domainState({ errorCounts: { measured: false, transient24h: 0, fatal24h: 0 } }));
     expect(html).toContain("not connected");
-    expect(html).toContain("nothing is being counted");
+    expect(html).toContain("nothing is counting");
+    expect(html).not.toContain('class="big">0<');
   });
 
   it("every drill-down that can reach chat shows the question before composing it", () => {

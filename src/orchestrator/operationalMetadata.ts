@@ -29,6 +29,12 @@ export interface CredentialStatusSummary {
 }
 
 export interface ErrorCountSummary {
+  /**
+   * False when nothing is counting errors. The two counts below are then
+   * placeholders, not measurements — rendering them as "0 errors" is the
+   * same lie as reporting an unaudited credential list as "all valid".
+   */
+  measured: boolean;
   transient24h: number;
   fatal24h: number;
 }
@@ -47,7 +53,7 @@ const TOP_LEVEL_KEYS = new Set([
   "credentialStatus",
   "errorCounts",
 ]);
-const ERROR_COUNT_KEYS = new Set(["transient24h", "fatal24h"]);
+const ERROR_COUNT_KEYS = new Set(["measured", "transient24h", "fatal24h"]);
 
 /**
  * Defense in depth: even though TypeScript enforces this shape at compile

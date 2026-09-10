@@ -71,6 +71,10 @@ export class DomainInstance {
 
   /** The ONLY thing this domain instance ever hands to the shared orchestrator layer. */
   async reportHealth(errorLog: ErrorLogCounts): Promise<OperationalMetadata> {
+    // findings are deliberately not carried here — they reach Alex through
+    // the reviewer's proposals, not the health report. statuses alone is
+    // enough for the wire, but see auditCredentials' doc comment: an empty
+    // statuses array is only meaningful alongside the counts it audited.
     const { statuses } = await this.security.auditCredentials();
     return {
       domain: this.config.id,
