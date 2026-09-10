@@ -13,7 +13,7 @@ function validMetadata(domain: "work" | "personal"): OperationalMetadata {
     reportedAt: new Date().toISOString(),
     moduleHealth: [{ moduleId: "m1", status: "healthy", lastRestartAt: null, restartCount24h: 0 }],
     credentialStatus: [{ credentialRef: "ref1", status: "valid", expiresAt: null }],
-    errorCounts: { transient24h: 0, fatal24h: 0 },
+    errorCounts: { measured: true, transient24h: 0, fatal24h: 0 },
   };
 }
 

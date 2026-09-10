@@ -6,7 +6,15 @@
 export class Scheduler {
   private readonly timers: NodeJS.Timeout[] = [];
 
-  every(intervalMs: number, task: () => Promise<void>, onError: (err: unknown) => void): void {
+  every(
+    intervalMs: number,
+    task: () => Promise<void>,
+    onError: (err: unknown) => void,
+    opts: { immediate?: boolean } = {},
+  ): void {
+    if (opts.immediate) {
+      task().catch(onError);
+    }
     const timer = setInterval(() => {
       task().catch(onError);
     }, intervalMs);

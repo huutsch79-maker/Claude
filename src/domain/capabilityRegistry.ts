@@ -77,6 +77,17 @@ export class CapabilityRegistry {
   }
 }
 
+/** Throws when a column is absent entirely, while allowing a present-but-NULL value through. */
+function requireColumn(row: Record<string, unknown>, column: string): unknown {
+  if (!(column in row)) {
+    throw new Error(
+      `capabilities row is missing the "${column}" column — schema drift; ` +
+        `credential auditing would silently report nothing for this domain`,
+    );
+  }
+  return row[column];
+}
+
 function rowToCapability(row: Record<string, unknown>): CapabilityRow {
   return {
     id: row.id as string,
@@ -87,7 +98,13 @@ function rowToCapability(row: Record<string, unknown>): CapabilityRow {
     systemPrompt: (row.system_prompt as string | null) ?? null,
     toolConfig: (row.tool_config as Record<string, unknown>) ?? {},
     modelOverride: (row.model_override as string | null) ?? null,
-    credentialRef: (row.credential_ref as string | null) ?? null,
+    // `?? null` here would make a MISSING column (schema drift — renamed or
+    // dropped by a migration) indistinguishable from a column that is
+    // genuinely NULL. Downstream, security.ts filters nulls out, so drift
+    // would silently switch off credential auditing for one domain while
+    // the other kept working — a difference that reads as configuration
+    // rather than as a bug. Assert presence instead.
+    credentialRef: requireColumn(row, "credential_ref") as string | null,
     modulePath: row.module_path as string,
   };
 }

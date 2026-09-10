@@ -18,6 +18,10 @@ export function createDomainPool(config: DomainConfig): pg.Pool {
     database: process.env.JARVIS_DB_NAME ?? "jarvis",
     user: process.env[userEnv] ?? `jarvis_${config.id}`,
     password: process.env[passEnv],
+    // pg's default is 0 (wait forever) for a connection attempt — against an
+    // unreachable database that means pool.end() during shutdown never
+    // resolves and the process waits for a supervisor's SIGKILL. Bound it.
+    connectionTimeoutMillis: Number(process.env.JARVIS_DB_CONNECTION_TIMEOUT_MS ?? 10_000),
     // schema-qualify every query instead of relying on search_path, so a
     // misconfigured connection can't silently resolve to the wrong schema
   });

@@ -20,5 +20,19 @@
         ]
       }
     ]
+  },
+  "extraKnownMarketplaces": {
+    "claude-code-plugins": {
+      "source": {
+        "source": "github",
+        "repo": "anthropics/claude-code"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "pr-review-toolkit@claude-code-plugins": true,
+    "hookify@claude-code-plugins": true,
+    "plugin-dev@claude-code-plugins": true,
+    "security-guidance@claude-code-plugins": true
   }
 }
