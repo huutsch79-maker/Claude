@@ -79,13 +79,14 @@ it tries 6, then 7, and so on.
    Columns are found by header name, so their order doesn't matter. New
    preparers, vendors, jockeys and any number of lots are handled automatically.
    The jockey rides file isn't needed.
-2. A Teams message brings back the summary and a link to your workbook copy
-   (in SharePoint › Breeze Up Agent › Runs) with the draft sheets added.
+2. About a minute later the agent replies in the same chat with a summary and a
+   temporary **Download** link (valid for 7 days) to your workbook with the draft
+   sheets added.
 3. Fix any ERROR lines in your own workbook and upload it again. Ask for "another
    version" or "7 preparers at once" to compare options.
 
 ## Setting up a new sale (agent owner)
-Update the shared `Breeze Up Agent/Agent Config.xlsx` in SharePoint: change
+Update the shared `Breeze Up Agent/Agent Config.xlsx` (in the agent's service account OneDrive): change
 `saleCode`, check the `consecutive` rules (e.g. Prima Park | Mon | 2), and remove
 old aliases. A workbook's own `Agent Config` sheet overrides the shared file for
 that run.

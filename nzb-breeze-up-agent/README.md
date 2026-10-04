@@ -7,9 +7,9 @@ Builds NZB breeze-up heat schedules:
 - data problems flagged.
 
 Staff attach the sale's Heat Schedule workbook to the **NZB Breeze Up Agent**
-Copilot agent in Teams and get the draft schedule back. The solver itself is an
-Excel Office Script. The sale rules live in a shared `Agent Config.xlsx` in
-SharePoint (template: `templates/Agent_Config.xlsx`).
+Copilot agent and get the result back in the same chat: a summary and a temporary
+download link. The solver itself is an Excel Office Script. The sale rules live in
+a shared `Agent Config.xlsx` (template: `templates/Agent_Config.xlsx`).
 
 | Read this | For |
 |---|---|
@@ -29,7 +29,7 @@ npm run schedule -- "26RTR_Heat_Schedule.xlsx" --config config/rtr26.config.json
 npm run build:office           # regenerate dist-office/NZB_Breeze_Up_Agent.ts after changing src/
 ```
 
-Optional flags for `schedule`: `--day Mon` schedules one day only. `--config-text config/rtr26.agent-config.txt` uses the shared Agent Config text format, the same way the agent flow does.
+Optional flags for `schedule`: `--day Mon` schedules one day only. `--config-text config/rtr26.agent-config.txt` uses the shared Agent Config text format, the same way the agent flow does. `--budget 45` sets a time budget in seconds, as the agent flow does.
 
 Settings precedence: built-in defaults < `--config` JSON < shared config text
 (`--config-text` / SharePoint Agent Config) < the workbook's **Agent Config** sheet

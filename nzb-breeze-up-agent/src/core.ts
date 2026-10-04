@@ -45,6 +45,12 @@ export interface SchedulerConfig {
   preferLanes: number;
   /** Simulated-annealing steps per seed (higher = slower, usually better). */
   annealSteps: number;
+  /**
+   * Stop searching after this many seconds in total (0 = no limit) and return the
+   * best schedule found so far. Keeps the run inside Copilot's 100-second tool
+   * limit so the result can be returned straight into the chat.
+   */
+  timeBudgetSeconds: number;
   /** Max positions a preparer may move from its preferred order when the solver perturbs it. */
   orderFlex: number;
   /** Randomised restarts per lane/shift combination. */
@@ -189,6 +195,7 @@ export function defaultConfig(): SchedulerConfig {
     maxBuoShift: 2,
     preferLanes: 0,
     annealSteps: 20000,
+    timeBudgetSeconds: 0,
     orderFlex: 2,
     iterations: 60,
     seed: 26,
@@ -255,6 +262,7 @@ export function configFromSheet(values: Cell[][], base: SchedulerConfig): Schedu
       case "orderflex": cfg.orderFlex = num(value, cfg.orderFlex); break;
       case "iterations": cfg.iterations = num(value, cfg.iterations); break;
       case "annealsteps": cfg.annealSteps = num(value, cfg.annealSteps); break;
+      case "timebudgetseconds": cfg.timeBudgetSeconds = num(value, cfg.timeBudgetSeconds); break;
       case "seed": cfg.seed = num(value, cfg.seed); break;
       case "starttime": cfg.startTime = value; break;
       case "minutesperheat": cfg.minutesPerHeat = num(value, 0); break;
@@ -327,6 +335,7 @@ export function configToSheet(cfg: SchedulerConfig): Cell[][] {
   rows.push(["minutesPerHeat", cfg.minutesPerHeat, "Optional minutes per heat (0 = no Time column)"]);
   rows.push(["iterations", cfg.iterations, "Advanced: greedy restarts per setting"]);
   rows.push(["annealSteps", cfg.annealSteps, "Advanced: optimiser effort (lower if the script times out)"]);
+  rows.push(["timeBudgetSeconds", cfg.timeBudgetSeconds, "Stop and return the best schedule after this many seconds (0 = no limit). 60 keeps Copilot replies in-chat"]);
   rows.push(["seed", cfg.seed, "Advanced: change to get a different equally-good draft"]);
   return rows;
 }
@@ -1000,7 +1009,7 @@ function objective(order: HeatUnit[], ctx: ObjectiveContext): Breakdown {
   return { violations, shortfall, buoOverCap, idle, maxIdle, overOpen, deviation, brokenTurns, buoMoves, spread, total };
 }
 
-function anneal(start: HeatUnit[], ctx: ObjectiveContext, rng: () => number, steps: number): HeatUnit[] {
+function anneal(start: HeatUnit[], ctx: ObjectiveContext, rng: () => number, steps: number, deadline = Infinity): HeatUnit[] {
   let cur = start.slice();
   let curScore = objective(cur, ctx).total;
   let best = cur.slice();
@@ -1011,6 +1020,7 @@ function anneal(start: HeatUnit[], ctx: ObjectiveContext, rng: () => number, ste
   const t0 = 3000;
   const t1 = 2;
   for (let s = 0; s < steps; s++) {
+    if ((s & 255) === 0 && Date.now() > deadline) break;
     const temp = t0 * Math.pow(t1 / t0, s / steps);
     const i = Math.floor(rng() * n);
     let j = i + Math.floor(rng() * (2 * reach + 1)) - reach;
@@ -1048,7 +1058,7 @@ export interface Alternative {
   breakdown: Breakdown;
 }
 
-export function scheduleDay(day: DayConfig, horses: Horse[], order: OrderEntry[], cfg: SchedulerConfig): DaySchedule {
+export function scheduleDay(day: DayConfig, horses: Horse[], order: OrderEntry[], cfg: SchedulerConfig, deadline = Infinity): DaySchedule {
   const heats = buildHeats(horses);
   const byPrep = new Map<string, HeatUnit[]>();
   for (const h of heats) {
@@ -1088,12 +1098,20 @@ export function scheduleDay(day: DayConfig, horses: Horse[], order: OrderEntry[]
   const alternatives: Alternative[] = [];
   let chosen: { order: HeatUnit[]; lanes: number; b: Breakdown } | null = null;
   const ladder = cfg.laneOptions.slice().sort((a, b) => a - b);
-  for (const lanes of ladder) {
+  for (let li = 0; li < ladder.length; li++) {
+    const lanes = ladder[li] ?? 5;
+    // Time budget: a level may use half the remaining time unless it is the last one;
+    // greedy seeding gets the first 30% of that, annealing the rest.
+    const now = Date.now();
+    if (chosen && now > deadline) break;
+    const levelEnd = li < ladder.length - 1 && Number.isFinite(deadline) ? now + (deadline - now) * 0.5 : deadline;
+    const greedyEnd = Number.isFinite(levelEnd) ? now + (levelEnd - now) * 0.3 : Infinity;
     const ctx: ObjectiveContext = { step: cfg.minHeatsBetween + 1, lanes, maxShift: cfg.maxBuoShift, idleLimit: 2 * lanes, preferredRank, buoRank, perTurn, heatsOf };
     // 1. Greedy rolling-wave constructions; keep the few best seeds.
     let seeds: { order: HeatUnit[]; score: number }[] = [];
     for (const shift of shifts) {
       for (let it = 0; it < Math.max(1, cfg.iterations); it++) {
+        if (it > 0 && Date.now() > greedyEnd) break;
         const queue = it === 0 ? preferred.slice() : perturbQueue(preferred, cfg.orderFlex, rng);
         const r = runOnce(byPrep, day.name, cfg, { lanes, buoShift: shift, queue, rng, jitter: it === 0 ? 0 : 0.15 });
         const sc = objective(r.order, ctx).total;
@@ -1107,7 +1125,7 @@ export function scheduleDay(day: DayConfig, horses: Horse[], order: OrderEntry[]
     // 2. Simulated annealing on each seed.
     let levelBest: { order: HeatUnit[]; b: Breakdown } | null = null;
     for (const sd of seeds) {
-      const improved = anneal(sd.order, ctx, rng, cfg.annealSteps);
+      const improved = anneal(sd.order, ctx, rng, cfg.annealSteps, levelEnd);
       const b = objective(improved, ctx);
       if (!levelBest || b.total < levelBest.b.total) levelBest = { order: improved, b };
     }
@@ -1243,11 +1261,16 @@ export function run(read: SheetReader, baseCfg: SchedulerConfig, overrides: Part
 
   const schedules: DaySchedule[] = [];
   const jockeyDisplay: Record<string, string> = {};
-  for (const d of cfg.days) {
+  const toRun = cfg.days.filter((d) => (byDay.get(d.name) ?? []).length > 0 && (cfg.onlyDay === "" || key(cfg.onlyDay) === key(d.name)));
+  const started = Date.now();
+  const budgetMs = cfg.timeBudgetSeconds > 0 ? cfg.timeBudgetSeconds * 1000 : 0;
+  for (let di = 0; di < toRun.length; di++) {
+    const d = toRun[di];
+    if (!d) continue;
     const horses = byDay.get(d.name) ?? [];
-    if (horses.length === 0) continue;
-    if (cfg.onlyDay !== "" && key(cfg.onlyDay) !== key(d.name)) continue;
-    const s = scheduleDay(d, horses, orders.get(d.name) ?? [], cfg);
+    // Each day gets an equal share of whatever budget is left.
+    const deadline = budgetMs > 0 ? Date.now() + (started + budgetMs - Date.now()) / (toRun.length - di) : Infinity;
+    const s = scheduleDay(d, horses, orders.get(d.name) ?? [], cfg, deadline);
     schedules.push(s);
     for (const h of horses) if (h.jockeyKey !== "") jockeyDisplay[h.jockeyKey] = h.jockey;
     if (s.violations.length > 0) {

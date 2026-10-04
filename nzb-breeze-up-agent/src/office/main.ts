@@ -12,12 +12,15 @@
 //   seed        - change to get an alternative, equally-valid draft (0 = keep)
 //   onlyDay     - schedule just one day, e.g. "Mon" ("" = all days). Use one
 //                 call per day if a large sale hits the script time limit.
+//   timeBudgetSeconds - stop and return the best schedule found after this many
+//                 seconds (0 = use the config value). Use ~60 when the agent
+//                 waits for the answer in chat (Copilot allows 100 s per tool).
 //   configText  - the sale rules from the shared Agent Config file, one
 //                 "setting: value" per line. Lets a user upload a plain Heat
 //                 Schedule workbook to the agent without an Agent Config sheet.
 // ===========================================================================
 
-function main(workbook: ExcelScript.Workbook, preferLanes: number = 0, seed: number = 0, onlyDay: string = "", configText: string = ""): string {
+function main(workbook: ExcelScript.Workbook, preferLanes: number = 0, seed: number = 0, onlyDay: string = "", configText: string = "", timeBudgetSeconds: number = 0): string {
   const read = (name: string): Cell[][] | null => {
     const ws = workbook.getWorksheets().find((w) => w.getName().trim().toLowerCase() === name.trim().toLowerCase());
     if (!ws) return null;
@@ -45,6 +48,7 @@ function main(workbook: ExcelScript.Workbook, preferLanes: number = 0, seed: num
   if (preferLanes > 0) overrides.preferLanes = preferLanes;
   if (seed > 0) overrides.seed = seed;
   if (onlyDay.trim() !== "") overrides.onlyDay = onlyDay.trim();
+  if (timeBudgetSeconds > 0) overrides.timeBudgetSeconds = timeBudgetSeconds;
   const res = run(read, cfg, overrides, configText);
 
   // Per-day runs keep their own Summary/Validation sheets so they don't overwrite each other.

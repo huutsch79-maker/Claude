@@ -230,3 +230,15 @@ describe("shared config text (uploaded workbook without an Agent Config sheet)",
     expect(res.config.minHeatsBetween).toBe(1);
   });
 });
+
+describe("time budget (answer inside Copilot's tool time limit)", () => {
+  it("stops within the budget and still returns a complete schedule", () => {
+    const preps: PrepSpec[] = Array.from({ length: 12 }, (_, i) => ({ name: `Vendor ${i + 1}`, heats: 6, jockeys: [`R${i}a`, `R${i}b`, `R${(i + 1) % 12}c`, `R${i}d`] }));
+    const sheets = { Mon: horsesSheet("Mon", preps), "Mon Order": orderSheet("Mon", preps.map((p) => p.name)) };
+    const cfg = mergeConfig({ days: [{ name: "Mon", horsesSheet: "Mon", orderSheet: "Mon Order" }], iterations: 100000, annealSteps: 10000000, timeBudgetSeconds: 1 });
+    const t0 = Date.now();
+    const s = run(reader(sheets), cfg).schedules[0]!;
+    expect(Date.now() - t0).toBeLessThan(3000);
+    expect(s.heats.length).toBe(72);
+  });
+});

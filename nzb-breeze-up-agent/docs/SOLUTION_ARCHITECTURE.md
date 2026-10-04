@@ -24,23 +24,24 @@ and **114 heats (216 horses, 28 preparers, 30 jockeys) on Tuesday**.
 
 ```
 ┌────────────── Microsoft 365 ────────────────────────────────────────────┐
-│ James in Teams / M365 Copilot: attaches <SALE>_Heat_Schedule.xlsx       │
-│        ▼                                                                 │
-│ NZB Breeze Up Agent (Copilot Studio)                                     │
-│   knowledge: BREEZE_UP_RULES.md, past programme example                  │
-│   topic "Build schedule from uploaded file" (file → flow)                │
-│        ▼                                                                 │
+│ James in Teams / M365 Copilot: 📎 <SALE>_Heat_Schedule.xlsx              │
+│        ▼                                    ▲ summary + Download link    │
+│ NZB Breeze Up Agent (Copilot Studio)        │ (same chat, ~1 minute)     │
+│   topic "Build schedule from uploaded file" ┘                            │
+│        ▼ file (waits ≤100 s)                                             │
 │ Agent flow "Build Breeze Up Schedule"                                    │
-│   ├─ Respond to agent ("working on it")               (<100 s rule)      │
-│   ├─ Create file  → SharePoint › Breeze Up Agent › Runs › <date> <name>  │
+│   ├─ Create file → service account OneDrive › Breeze Up Agent › Runs     │
 │   ├─ List rows  ← Breeze Up Agent › Agent Config.xlsx (ConfigTable)      │
-│   ├─ Run script from SharePoint library (≤120 s)                         │
-│   │     └─ NZB_Breeze_Up_Agent.osts (core.ts + main.ts), configText      │
-│   └─ Teams message: summary + link to the run's workbook                 │
-│ Run workbook = James's sheets + <SALE> Summary / Schedule / Programme /  │
-│   Preparers / Jockeys / Options / Clashes / Validation / Config (used)   │
+│   ├─ Run script (timeBudgetSeconds 45 → returns best found in time)      │
+│   ├─ Create share link (organisation, view)                              │
+│   ├─ Respond to agent (summary, errors, open + download links)           │
+│   └─ Delay 7 days → Delete file   (link becomes invalid)                 │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
+
+Everything the user sees happens in the Copilot chat. The OneDrive work folder is
+a temporary workspace that Office Scripts needs, because scripts can only run on
+workbooks stored in OneDrive or SharePoint.
 
 **Settings come from three places** (later wins): built-in defaults < shared
 `Agent Config.xlsx` in SharePoint (sale rules, maintained once per sale) < an
@@ -99,7 +100,7 @@ fewer than 4 heats between them**.
 | Gap rule changes (e.g. 5 heats) | `minHeatsBetween` in *Agent Config*. |
 | New special case ("X sends 3 in a row") | A `consecutive` row in *Agent Config*. |
 | Columns renamed or reordered | Header aliases (`Jockey`, `Jockey #1`, `Rider`…). Extend them in `defaultConfig().columns`. |
-| Bigger sale hits the script time limit | Lower `annealSteps`, or run per day (`OnlyDay`). Move to an Azure Function if needed. |
+| Bigger sale, longer solve | `timeBudgetSeconds` stops the search in time and returns the best schedule found, so the reply still fits Copilot's 100-second limit. Run per day (`OnlyDay`) for more search time per day. |
 | New AI platform or Copilot changes | `core.ts` is host-independent. Rebuild only the front door. |
 | Staff turnover | Script and flow are team-owned in SharePoint and in a Power Platform solution. Docs are in this repository. |
 
@@ -119,7 +120,7 @@ fewer than 4 heats between them**.
 | 10 | *Jockeys_Rides.xlsx → Riders* mixes per-preparer and per-jockey totals (e.g. Courtney Barnes: Count 1, Mon 6) and is a manual copy | Error-prone second source of truth | **Retire as an input.** The agent derives jockey loads from the Heat Schedule and outputs a *Jockeys* sheet |
 | 11 | Heavy jockeys: **Troy Harris 20 rides in 109 Monday heats** (needs ≥ 96), Ryan Elliot 18–19, George Rooke 17–18, Sam Collett 17 on Tuesday | These riders shape the whole day | Flagged as JOCKEY_HEAVY. Share with preparers early |
 | 12 | Last year's example workbook has `#N/A` / `#REF!` in the Tuesday, Stabling and Schedule_Tuesday sheets | Broken lookup chains | Outputs are now values written by the script, not formula chains |
-| 13 | Working files are on `S:\SALES\…` | Cloud services (Office Scripts, Copilot, Power Automate) can't reach network drives | Upload to the agent in Teams. The agent saves each run to SharePoint › Breeze Up Agent › Runs. Longer term, keep sale files in SharePoint |
+| 13 | Working files are on `S:\SALES\…` | Cloud services (Office Scripts, Copilot, Power Automate) can't reach network drives | Upload to the agent in the Copilot chat. Each run is a temporary copy in the agent's OneDrive work folder, deleted after 7 days |
 | 14 | Name spellings drift across years (*Ryan Elliott* in 25RTR, *Ryan Elliot* in 26RTR; *S Collett* vs *Sam Collett*) | History and analytics get split | Keep a jockey master list (a SharePoint list), and later feed aliases from it |
 
 ## 6. Roadmap (optional next steps)

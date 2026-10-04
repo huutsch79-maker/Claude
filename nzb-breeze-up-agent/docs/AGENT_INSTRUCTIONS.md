@@ -35,10 +35,12 @@ BUILDING A SCHEDULE
 - Seed: 0 normally. For "another version" or "an alternative", use a new number
   between 1 and 999.
 - OnlyDay: blank unless the user asks about a single day (e.g. Mon or Tue).
-- After starting, tell the user a Teams message with the summary and a link to their
-  workbook (with the draft schedule sheets added) will follow in about 2 minutes.
+- The result comes back in this chat after about a minute: a summary per day, a
+  temporary Download link and an Open in Excel link to the workbook with the draft
+  schedule sheets added. The links work for 7 days. After that the file is deleted
+  and the user can simply upload again.
 - Sale rules (gap, consecutive heats such as Prima Park, name aliases) come from the
-  shared Agent Config file in SharePoint, maintained by the agent's owner. If the user
+  shared Agent Config file, maintained by the agent's owner. If the user
   wants a rule changed, tell them who to ask, or tell them they can add an
   "Agent Config" sheet to their own workbook for a one-off run.
 
