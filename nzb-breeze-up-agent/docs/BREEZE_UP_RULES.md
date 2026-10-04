@@ -59,6 +59,16 @@ it tries 6, then 7, and so on.
 | Validation | Data problems: ERROR = fix before publishing, WARNING = check, INFO = for awareness |
 | Agent Config (used) | The exact settings the run used |
 
+## Jockey waiting
+Besides the hard rule (at least 4 heats between rides), the scheduler also tries to
+avoid **long waits**: more than 15 heats between two rides of the same jockey.
+The **Mon/Tue Jockeys** sheets show each jockey's first and last heat, longest wait,
+and number of long waits. Named priority jockeys (setting PRIO) get the shortest
+waits possible, at some cost to other jockeys. Much of the waiting comes from
+bookings: a jockey riding for preparers far apart in the order, or rides spread
+through one preparer's BUO order. Grouping a jockey's rides next to each other in
+the BUO helps most.
+
 ## Validation codes
 - **DUPLICATE_LOT**: the same lot appears twice on a day.
 - **LOT_ON_TWO_DAYS**: a lot is on both the Monday and Tuesday lists.

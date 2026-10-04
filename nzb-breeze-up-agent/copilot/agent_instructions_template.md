@@ -9,6 +9,11 @@ Each new sale, change only the settings lines near the top of the code:
 - `PAIRS` – preparers sending heats back-to-back, e.g. `{('prima park','mon'):2}`
 - `ALIAS` – name variants (lower case), e.g. `{'mark brooks / alex olivera':'mark brooks'}`
 - `GAP` – heats between a jockey's rides (4)
+- `JPEN` – how hard to cut long jockey waits (300; 0 = off)
+- `PRIO` – jockeys to keep waits short, e.g. `['Sam Collett']`
+
+The text is close to the 8,000-character limit. Regenerate it with
+`python3 scripts/build-agent-instructions.py` after any edit, so the length is checked.
 
 ~~~text
 {{INSTRUCTIONS}}~~~

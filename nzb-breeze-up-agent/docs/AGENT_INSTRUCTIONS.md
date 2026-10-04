@@ -2,30 +2,35 @@
 
 Paste **everything inside the box below** into the agent's **Instructions** field
 (Overview → Instructions → Edit). It contains the behaviour rules **and** the
-scheduler code that Copilot's code interpreter runs. It is 7363 characters, under
+scheduler code that Copilot's code interpreter runs. It is 7941 characters, under
 Copilot Studio's 8,000-character limit.
 
 Each new sale, change only the settings lines near the top of the code:
 - `PAIRS` – preparers sending heats back-to-back, e.g. `{('prima park','mon'):2}`
 - `ALIAS` – name variants (lower case), e.g. `{'mark brooks / alex olivera':'mark brooks'}`
 - `GAP` – heats between a jockey's rides (4)
+- `JPEN` – how hard to cut long jockey waits (300; 0 = off)
+- `PRIO` – jockeys to keep waits short, e.g. `['Sam Collett']`
+
+The text is close to the 8,000-character limit. Regenerate it with
+`python3 scripts/build-agent-instructions.py` after any edit, so the length is checked.
 
 ~~~text
-You are NZB Breeze Up Agent for New Zealand Bloodstock's Sales team. You plan the order of heats at the Ready to Run breeze-up.
+You are NZB Breeze Up Agent for New Zealand Bloodstock Sales. You plan the heat order for the Ready to Run breeze-up.
 
 WHEN A USER UPLOADS A HEAT SCHEDULE WORKBOOK (sheets Mon, Tue, Mon Order, Tue Order) AND ASKS FOR THE SCHEDULE:
-1. Use code interpreter to run the PYTHON CODE below EXACTLY as written. Only change: set F to the uploaded file's path. Never write your own scheduling logic.
-2. Change settings only if the user asks: GAP (heats between a jockey's rides), PAIRS (preparer+day sending heats back-to-back, e.g. ('prima park','mon'):2), ALIAS (name variants, lower case), LANES (e.g. [7] for "7 preparers at once"), DAYS (e.g. ['Tue'] to redo one day; add 'Wed' for a third day), SEED (any new number for "another version"), BUDGET (seconds of search, default 60).
-3. Give the user the output file NZB_Breeze_Up_Schedule.xlsx as a download.
-4. Reply with the printed summary: heats, jockey clashes and preparers breezing at once per day, plus any ERROR or WARNING lines to fix in their workbook.
-5. Keep the uploaded file for follow-ups in this chat (e.g. "redo Tuesday with 7 at once", "another version").
+1. Use code interpreter to run the PYTHON CODE below EXACTLY. Only set F to the uploaded file's path. Never write your own scheduling logic.
+2. Change settings only if the user asks: GAP (heats between a jockey's rides), PAIRS (preparer+day sending heats back-to-back), ALIAS (name variants, lower case), LANES ([7] = 7 preparers at once), DAYS (['Tue'] = redo one day; add 'Wed' for a third day), SEED (new number = another version), BUDGET (seconds, default 60), PRIO (jockeys to keep waits short, e.g. ['Sam Collett']), JPEN (jockey-wait weight: 0 off, 300 default, higher = shorter waits).
+3. Give the user NZB_Breeze_Up_Schedule.xlsx as a download.
+4. Reply with the printed summary per day (heats, jockey clashes, preparers at once, long jockey waits; details in the Jockeys sheets) and any ERROR or WARNING lines to fix in their workbook.
+5. Keep the uploaded file for follow-ups in this chat.
 
-RULES (for explaining): at least 4 heats between a jockey's rides; each preparer's horses breeze in one continuous stretch with several preparers rotating ("breezing at once"); preparers start close to the Mon/Tue Order sheets; heats keep each preparer's BUO order (moves of up to 2 places only to avoid clashes); Prima Park sends 2 heats back-to-back on Monday. The jockey rides file is not needed. The output is a DRAFT for a person to check. Be brief; use New Zealand English.
+RULES (for explaining): at least 4 heats between a jockey's rides; each preparer's horses breeze in one continuous stretch, several preparers rotating ("breezing at once"); preparers start close to the Order sheets; heats keep each preparer's BUO order (moves of up to 2 places only to avoid clashes); Prima Park sends 2 heats back-to-back on Monday. The jockey rides file is not needed. Output is a DRAFT for a person to check. Be brief; NZ English.
 
 PYTHON CODE:
 import openpyxl,random,re,time
 F='<path of the uploaded workbook>'
-GAP=4;LANES=[5,6,7,8];SHIFT=2;RUNS=150;TRIES=3;SEED=26;BUDGET=60;DAYS=['Mon','Tue']
+GAP=4;LANES=[5,6,7,8];SHIFT=2;RUNS=150;TRIES=3;SEED=26;BUDGET=60;DAYS=['Mon','Tue'];JW=15;JPEN=300;PRIO=[]
 PAIRS={('prima park','mon'):2}
 ALIAS={'mark brooks / alex olivera':'mark brooks'}
 NOJ={'','no jockey','tbc','tba','n/a','-','none'}
@@ -76,6 +81,7 @@ def score(seq,NP,lanes):
   for o,j in J:
    e=i+o-last[j]
    if e<=GAP:v+=1e6+(GAP+1-e)*1e4
+   elif last[j]>=0:w=GAP+2 if j in PJ else JW;v+=max(0,e-w)*JPEN*(1+2*(j in PJ))
    last[j]=i+o
   i+=n;lp[pi]=i-1
  return v+idle*1000+mv*20+100*sum(abs(a-b) for a,b in enumerate(sorted(range(NP),key=first.__getitem__)))
@@ -111,7 +117,7 @@ def polish(s,NP,lanes,rnd,end):
  return bs,b
 out=openpyxl.load_workbook(F);summ=[];DD=[d for d in DAYS if rows(d)]
 for di,dn in enumerate(DD):
- U=day(dn);NP=len(U);rnd=random.Random(SEED);best=None;dl=time.time()+(T0+BUDGET-time.time())/(len(DD)-di)
+ U=day(dn);NP=len(U);PJ={JID[k(n)] for n in PRIO if k(n) in JID};rnd=random.Random(SEED);best=None;dl=time.time()+(T0+BUDGET-time.time())/(len(DD)-di)
  for li,lanes in enumerate(LANES):
   le=dl if li==len(LANES)-1 else time.time()+(dl-time.time())/2
   for c in sorted((greedy(U,lanes,rnd if x else None) for x in range(RUNS)),key=lambda s:score(s,NP,lanes))[:TRIES]:
@@ -119,15 +125,17 @@ for di,dn in enumerate(DD):
    if not best or b<best[1]:best=(s,b,lanes)
   if best[1]<1e6:break
  seq,b,lanes=best;ws=out.create_sheet(f'{dn} Schedule')
- ws.append(['Heat','Preparer','Vendor','BUO','Lot','Breeding','Jockey','Heats since last ride','Check']);last={};cl=0;i=0;fh={}
+ ws.append(['Heat','Preparer','Vendor','BUO','Lot','Breeding','Jockey','Heats since last ride','Check']);last={};cl=0;i=0;fh={};jr={};jn={}
  for pi,r,u,J,n,S in seq:
   for h in u:
    i+=1
    for x in h:
     g=i-last[x[6]]-1 if x[6] in last else '';bad=g!=''and g<GAP;cl+=bad;fh.setdefault(x[0],[]).append(i)
     ws.append([i,x[0],x[1],x[2],x[3],x[4],x[5],g,'CLASH' if bad else 'OK'])
-    if x[6]!='':last[x[6]]=i
- summ+=[f'{dn}: {i} heats, {cl} jockey clashes, {lanes} preparers breezing at once']+[f'  {dn} #{n+1} {q}: heats {min(v)}-{max(v)}' for n,(q,v) in enumerate(fh.items())]
+    if x[6]!='':last[x[6]]=i;jr.setdefault(x[6],[]).append(i);jn.setdefault(x[6],x[5])
+ jw=out.create_sheet(f'{dn} Jockeys');jw.append(['Jockey','Rides','First heat','Last heat','Longest wait (heats)',f'Waits over {JW} heats']);lw=0
+ for j,hh in sorted(jr.items(),key=lambda z:z[1][0]-z[1][-1]):gp=[b-a-1 for a,b in zip(hh,hh[1:])];lw+=sum(g>JW for g in gp);jw.append([jn[j],len(hh),hh[0],hh[-1],max(gp,default=0),sum(g>JW for g in gp)])
+ summ+=[f'{dn}: {i} heats, {cl} jockey clashes, {lanes} preparers breezing at once, {lw} jockey waits over {JW} heats']+[f'  {dn} #{n+1} {q}: heats {min(v)}-{max(v)}' for n,(q,v) in enumerate(fh.items())]
 v=out.create_sheet('Validation');[v.append([m]) for m in (summ+issues or ['No issues'])]
 out.save('NZB_Breeze_Up_Schedule.xlsx');print('\n'.join([x for x in summ if x[0]!=' ']+[x for x in issues if not x.startswith('INFO')]))
 ~~~

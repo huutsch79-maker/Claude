@@ -20,8 +20,10 @@ Agent: "Mon: 109 heats, 0 jockey clashes … Tue: 114 heats, 0 jockey clashes �
 The output workbook contains all of James's original sheets plus:
 - **Mon Schedule** / **Tue Schedule**: heat order, preparer, vendor, BUO, lot,
   breeding, jockey, heats since the jockey's last ride, and OK / CLASH;
-- **Validation**: the summary, duplicate lots, preparers missing from the order
-  sheet, and horses with no jockey.
+- **Mon Jockeys** / **Tue Jockeys**: each jockey's rides, first and last heat,
+  longest wait, and number of waits over 15 heats (longest day first);
+- **Validation**: the summary, duplicate lots, Day-column mismatches, preparers
+  missing from the order sheet, horses with no jockey, and each preparer's heat range.
 
 Tested on the 26RTR data: **Mon 109 heats and Tue 114 heats, both with 0 jockey
 clashes**. Prima Park's Monday heats always go out in back-to-back pairs, BUO
@@ -88,6 +90,7 @@ Time to build: about 30 minutes.
    - **Redo it with 7 preparers at once**: the agent sets `LANES=[7]`.
    - **Give me another version**: the agent sets a new `SEED`.
    - **What does CLASH mean?**: answered from the rules.
+   - **Keep Sam Collett's waits short**: the agent sets `PRIO=['Sam Collett']`.
 6. Open the **activity map** (or the `</> Code` view) to confirm the agent ran the
    code from the instructions, not code it wrote itself. If it improvised, make
    the instruction "Use code interpreter to run the PYTHON CODE below EXACTLY"
@@ -120,6 +123,8 @@ Open the agent → **Instructions** and edit only these lines near the top of th
 | `PAIRS=` | `{('prima park','mon'):2}` | preparer + day sending heats back-to-back (lower case). Use `{}` if none |
 | `ALIAS=` | `{'mark brooks / alex olivera':'mark brooks'}` | merge name variants (lower case). Use `{}` if none |
 | `GAP=` | `4` | heats between a jockey's rides |
+| `JPEN=` | `300` | how hard to cut long jockey waits (0 = off; higher = shorter waits, but preparers may spread more) |
+| `PRIO=` | `['Sam Collett']` | jockeys whose waits are kept as short as possible (e.g. riding at the races that day). Use `[]` if none |
 
 Then **Publish**. James can also say a change in chat for a single run, e.g.
 *"This time Prima Park sends 2 in a row on Tuesday"*.
