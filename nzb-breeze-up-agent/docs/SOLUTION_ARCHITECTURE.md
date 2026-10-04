@@ -13,6 +13,24 @@ heats) into one ordered programme where:
 For 26RTR that is **109 heats (206 horses, 17 preparers, 31 jockeys) on Monday**
 and **114 heats (216 horses, 28 preparers, 30 jockeys) on Tuesday**.
 
+## 2a. Current design (chosen): Copilot code interpreter, no storage
+
+James uploads the workbook into the Copilot chat. The agent's instructions contain
+a compact, deterministic Python scheduler (`copilot/breeze_up_scheduler.py`, about
+4.6k characters). Copilot Studio's **code interpreter** runs it in its sandbox and
+returns `NZB_Breeze_Up_Schedule.xlsx` as a download. There is no OneDrive,
+SharePoint, flow, connector or Azure. The algorithm is the same rolling-wave
+greedy + simulated annealing as the TypeScript engine, but compact:
+consecutive-rule preparers (Prima Park) are handled as fixed back-to-back blocks,
+there are 3 annealing restarts, and the escalation runs from 5 to 8 preparers at
+once. 26RTR result: 0 clashes on both days in about 17 seconds.
+
+Trade-offs: code interpreter is a preview feature, and the agent must run the
+provided code verbatim (the instructions say so explicitly; check the activity
+map when testing). Sale rules are edited in the instructions' settings lines. The
+section below describes the fuller Office Script design, kept as a fallback in
+`ALTERNATIVE_FLOW_SETUP.md`.
+
 ## 2. Key design decision: deterministic solver, AI front door
 
 | Option | Verdict |
