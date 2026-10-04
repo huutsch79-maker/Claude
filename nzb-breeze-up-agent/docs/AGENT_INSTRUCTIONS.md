@@ -2,7 +2,7 @@
 
 Paste **everything inside the box below** into the agent's **Instructions** field
 (Overview → Instructions → Edit). It contains the behaviour rules **and** the
-scheduler code that Copilot's code interpreter runs. It is 7094 characters, under
+scheduler code that Copilot's code interpreter runs. It is 7363 characters, under
 Copilot Studio's 8,000-character limit.
 
 Each new sale, change only the settings lines near the top of the code:
@@ -60,7 +60,12 @@ def day(d):
   for x in hs:
    js=[y[6] for y in x if y[6]!='']
    if len(js)>len(set(js)):issues.append(f'ERROR {d}: {nm[p]} BUO {x[0][2]} has the same jockey on both horses')
-  U[p]=[(pi,r,hs[i:i+n],[(o,y[6]) for o,x in enumerate(hs[i:i+n]) for y in x if y[6]!=''],len(hs[i:i+n]),SHIFT//n) for r,i in enumerate(range(0,len(hs),n))]
+  B2=[]
+  for i in range(0,len(hs),n):
+   g=hs[i:i+n];js=[y[6] for x in g for y in x if y[6]!='']
+   if len(g)>1 and len(js)>len(set(js)):issues.append(f'WARNING {d}: {nm[p]} BUO {g[0][0][2]}-{g[-1][0][2]} share a jockey so cannot go back-to-back - sent separately');B2+=[[x] for x in g]
+   else:B2.append(g)
+  U[p]=[(pi,r,g,[(o,y[6]) for o,x in enumerate(g) for y in x if y[6]!=''],len(g),SHIFT//n) for r,g in enumerate(B2)]
  return [U[p] for p in O]
 def score(seq,NP,lanes):
  last=[-99]*len(JID);v=0;first=[-1]*NP;lp=[0]*NP;cnt=[0]*NP;idle=mv=i=0;L=2*lanes
