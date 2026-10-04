@@ -62,3 +62,10 @@ npm run typecheck
 Disabling a module: `update <schema>.capabilities set enabled = false where
 name = '...'`. Removing one: delete its row — memory entries are not
 owned per-module and stay intact.
+
+## NZB Breeze Up Agent
+
+`nzb-breeze-up-agent/` is a self-contained project: a breeze-up heat scheduler
+(Excel Office Script + Copilot Studio agent). See
+[nzb-breeze-up-agent/README.md](nzb-breeze-up-agent/README.md) and the
+step-by-step [Copilot Studio setup guide](nzb-breeze-up-agent/docs/COPILOT_STUDIO_SETUP.md).

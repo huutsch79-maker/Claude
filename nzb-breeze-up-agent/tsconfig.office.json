@@ -1,0 +1,12 @@
+{
+  "compilerOptions": {
+    "target": "ES2017",
+    "lib": ["ES2017", "ES2019.Array"],
+    "strict": true,
+    "noImplicitAny": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "noUnusedLocals": false
+  },
+  "files": ["src/office/excelscript.d.ts", "dist-office/NZB_Breeze_Up_Agent.ts"]
+}

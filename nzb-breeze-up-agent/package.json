@@ -1,0 +1,25 @@
+{
+  "name": "nzb-breeze-up-agent",
+  "version": "1.0.0",
+  "private": true,
+  "description": "NZB Breeze Up Agent - builds breeze-up heat schedules that keep jockeys clear of clashes and preparers together",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "schedule": "tsx src/cli.ts",
+    "build:office": "node scripts/build-office-script.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.office.json"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
