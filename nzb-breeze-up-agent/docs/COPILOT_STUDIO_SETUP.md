@@ -1,206 +1,226 @@
 # NZB Breeze Up Agent: step-by-step build in Copilot Studio
 
-This guide builds **NZB Breeze Up Agent**, a Copilot agent in Teams and
-Microsoft 365 Copilot. Sales staff ask it something like *"Build the 26RTR
-breeze up schedule"* and get back a draft heat programme in the sale's Heat
-Schedule workbook. The draft has:
+## How James will use it
 
-- at least 4 heats between each jockey's rides,
-- each preparer's horses breezing in one continuous stretch, in an order close
-  to the preferred order,
-- Prima Park-style "two heats back-to-back" rules honoured,
-- a validation sheet listing data problems to fix.
+1. James opens **NZB Breeze Up Agent** in Teams (or Microsoft 365 Copilot).
+2. He attaches the sale's **Heat Schedule workbook** (sheets `Mon`, `Tue`,
+   `Mon Order`, `Tue Order`) and types *"Build the breeze up schedule"*.
+3. The agent replies *"Got it, working on it"*. Within about 2 minutes a Teams
+   message arrives with the summary and a link to **his workbook with the draft
+   schedule sheets added**.
+4. He can follow up: *"Redo Tuesday with 7 preparers at once"*, *"Give me
+   another version"*, *"What does the Validation sheet mean?"*. No re-upload is
+   needed in the same chat.
 
-Time to build: about 2 to 3 hours the first time. After that, each sale needs
-about 10 minutes of setup (see **Part 8**).
+**Only the Heat Schedule workbook needs uploading.** The jockey file isn't
+needed, because the agent works out each jockey's rides from the Heat Schedule.
+Last year's example programme is uploaded **once**, by the builder, as
+knowledge (Part 2.1).
 
-> **Why the agent doesn't plan the heats itself.** The scheduling is a puzzle
-> with thousands of possible orders, and an AI chat model can't reliably check
-> every jockey gap. So the solving is done by deterministic code (an Excel
-> **Office Script**) that gives the same answer every time and can be checked.
-> The Copilot agent is the friendly front door: it understands the request,
-> runs the script, explains the result and answers questions.
-> See `SOLUTION_ARCHITECTURE.md`.
+The sale rules (4-heat gap, *Prima Park sends 2 in a row on Monday*, name
+aliases) live in one shared **Agent Config** file in SharePoint, so James doesn't
+need to add anything to his workbook. Whoever looks after the agent updates that
+file once per sale (Part 8).
 
 ```
- You (Teams / M365 Copilot)
-        │  "Build the 27RTR breeze up schedule"
+ James in Teams: attaches 26RTR_Heat_Schedule.xlsx  "Build the breeze up schedule"
         ▼
- NZB Breeze Up Agent  (Copilot Studio)
-        │  calls tool
+ NZB Breeze Up Agent (Copilot Studio)
+   topic "Build schedule from uploaded file"
+        │  passes the file (name + content) to the flow
         ▼
  Agent flow "Build Breeze Up Schedule"
-        │  1. replies "started" to the agent straight away
-        │  2. Run script from SharePoint library ──►  NZB_Breeze_Up_Agent script
-        │                                             reads:  Mon, Tue, Mon Order, Tue Order, Agent Config
-        │                                             writes: <sale> Mon Schedule, Programme, Jockeys,
-        │                                                     Preparers, Options, Clashes, Validation
-        ▼  3. Teams message to you with the summary and a link to the workbook
+   1. Respond to agent: "working on it"              (Copilot waits ≤100 s)
+   2. Save the upload to SharePoint › Breeze Up Agent › Runs
+   3. Read sale rules from SharePoint › Breeze Up Agent › Agent Config.xlsx
+   4. Run script "NZB Breeze Up Agent" on the saved copy  (≤120 s)
+   5. Teams message to James: summary + link to the workbook with the new sheets
 ```
+
+> **Why the agent doesn't plan the heats itself.** Ordering 100+ heats so that
+> no jockey rides too soon is a puzzle with thousands of combinations, and an AI
+> chat model can't check every gap reliably. Deterministic code (an Excel
+> **Office Script**) does the solving and gives the same, checkable answer every
+> time. The Copilot agent is the front door. See `SOLUTION_ARCHITECTURE.md`.
+
+Time to build: about 2 to 3 hours the first time.
 
 ---
 
-## Part 0: Prerequisites (do once, with IT if needed)
+## Part 0: Prerequisites (once, with IT if needed)
 
-| Need | Why | Who |
-|---|---|---|
-| Copilot Studio access (licence or pay-as-you-go environment) | build the agent and agent flow | IT / Power Platform admin |
-| Microsoft 365 business licence with **Office Scripts** enabled (Excel shows an **Automate** tab) | runs the scheduler inside Excel | IT (M365 admin centre → Org settings → Office Scripts) |
-| A **SharePoint / Teams site** for Sales (e.g. *NZB Sales*) | Office Scripts and flows **can't** reach `S:\` network drives | IT / site owner |
-| Power Platform policy allows the **Excel Online (Business)**, **SharePoint**, **Microsoft Teams** and **Office 365 Users** connectors together | the flow uses all four | Power Platform admin |
-| Teams admin allows Power Platform apps | so staff can install the agent | Teams admin |
+| Need | Why |
+|---|---|
+| Copilot Studio access (licence or pay-as-you-go environment) | build the agent and flow |
+| Microsoft 365 business licence with **Office Scripts** enabled (Excel shows an **Automate** tab) | runs the scheduler |
+| A SharePoint / Teams site for Sales (e.g. *NZB Sales*) | stores the script, the shared config and each run's workbook |
+| Power Platform policy allows **Excel Online (Business)**, **SharePoint** and **Microsoft Teams** connectors together | the flow uses all three |
+| Teams admin allows Power Platform apps | so James can install the agent |
 
-### 0.1 Move the breeze-up folder to SharePoint
+The uploaded workbook must be a normal `.xlsx` with **no password or
+encrypting sensitivity label**, because Copilot can't pass protected files.
 
-Copy `S:\SALES\26RTR\26RTR Breezeups\Heat Schedule` into the SharePoint site,
-using the **same folder pattern every sale**. For example:
+### 0.1 Create the agent's SharePoint folder
+
+In the Sales site's **Documents** library, create:
 
 ```
-NZB Sales (site) › Documents › Sales › 26RTR › Breezeups › Heat Schedule › 26RTR_Heat_Schedule.xlsx
-NZB Sales (site) › Documents › Sales › 27RTR › Breezeups › Heat Schedule › 27RTR_Heat_Schedule.xlsx
+Breeze Up Agent/
+  Scripts/              ← the Office Script (.osts) lives here
+  Runs/                 ← each upload is saved here with the draft sheets added
+  Agent Config.xlsx     ← copy of templates/Agent_Config.xlsx from this repository
 ```
 
-The flow builds the path from the sale code, so keeping this pattern is what
-lets next year's sale work without changing the flow. You can map the
-SharePoint library to File Explorer (**Sync**) if people prefer working from a
-drive letter.
-
-Also create a folder for the script, e.g. `Documents › Breeze Up Agent › Scripts`.
+Give the Sales team **edit** access to `Runs`. Only the agent's owners need edit
+access to `Scripts` and `Agent Config.xlsx`.
 
 ---
 
-## Part 1: Install the scheduler script in Excel (about 15 minutes)
+## Part 1: Install the scheduler script (about 15 minutes)
 
-1. Open `26RTR_Heat_Schedule.xlsx` **in Excel for the web** (from SharePoint).
-2. Select **Automate** → **New Script** (or **Create in Code Editor**).
+1. Open any copy of the 26RTR Heat Schedule workbook **in Excel for the web**.
+2. Select **Automate** → **New Script** → **Create in Code Editor**.
 3. Delete the sample code. Open
-   `nzb-breeze-up-agent/dist-office/NZB_Breeze_Up_Agent.ts` from this
-   repository, copy **all** of it, and paste it into the Code Editor.
-4. Click the script name at the top and rename it to **NZB Breeze Up Agent**.
-   Select **Save script**.
-5. **Make it team-owned.** Click the script name again, select **Move**, and
-   choose `Documents › Breeze Up Agent › Scripts` in the SharePoint site. Scripts
-   left in your personal OneDrive stop working if you leave or your account
-   changes.
-6. **Test it in Excel first, before any agent work:** select **Run**.
-   - The first run creates an **Agent Config** sheet (see Part 7), then builds
-     the schedule.
-   - Expect 20–60 seconds. You'll get new sheets such as
-     `26RTR Summary`, `26RTR Mon Schedule`, `26RTR Mon Programme`,
-     `26RTR Options`, `26RTR Clashes` and `26RTR Validation`.
-7. Open **Agent Config** and check the settings. For 26RTR, add these rows
-   (columns **Setting | Value**):
+   `nzb-breeze-up-agent/dist-office/NZB_Breeze_Up_Agent.ts` from this repository,
+   copy **all** of it, and paste it in.
+4. Click the script name, rename it **NZB Breeze Up Agent**, and select **Save script**.
+5. Click the name again → **Move** → choose `Breeze Up Agent/Scripts` on the Sales
+   site. The script is now team-owned and keeps working if someone leaves.
+6. **Test it straight away:** select **Run**. After 20–60 seconds you'll see an
+   `Agent Config` sheet and new sheets such as `26RTR Summary`,
+   `26RTR Mon Schedule`, `26RTR Mon Programme`, `26RTR Options` and
+   `26RTR Validation`. (When run by hand like this, the script uses an
+   `Agent Config` sheet inside the workbook. When run by the agent, it uses the
+   shared file.)
 
-   | Setting | Value |
-   |---|---|
-   | saleCode | 26RTR |
-   | consecutive | Prima Park \| Mon \| 2 |
-   | preparerAlias | Mark Brooks / Alex Olivera => Mark Brooks |
+### 1.1 Fill in the shared Agent Config
 
-   Run the script again. You now have a working scheduler, even without the agent.
+Open `Breeze Up Agent/Agent Config.xlsx`. It contains a table called
+**ConfigTable** (Setting | Value | Notes). Check the yellow **Value** cells. The
+26RTR rules are already filled in:
 
-> The script can also be put on a button: **Automate** → script → **…** → **Add
-> in workbook**. This is a useful fallback if Copilot is ever unavailable.
+| Setting | Value |
+|---|---|
+| saleCode | 26RTR |
+| day | Mon \| Mon \| Mon Order |
+| day | Tue \| Tue \| Tue Order |
+| minHeatsBetween | 4 |
+| consecutive | Prima Park \| Mon \| 2 |
+| preparerAlias | Mark Brooks / Alex Olivera => Mark Brooks |
+
+Add rows **inside the table** for more days, rules or aliases (see Part 7).
+Don't rename the table.
 
 ---
 
 ## Part 2: Create the agent (about 15 minutes)
 
-1. Go to <https://copilotstudio.microsoft.com> and pick the right
-   **environment** (top right). Use your organisation's production environment
-   for Sales, not the personal default, if IT has set one up.
-2. Select **Agents** → **+ New agent** (or **Create blank agent**). Choose
-   **Skip to configure** if it offers a chat-based setup.
-3. Fill in:
-   - **Name:** `NZB Breeze Up Agent`
-   - **Icon:** an NZB / horse icon (optional)
-   - **Description:** *Builds and explains NZB breeze-up heat schedules. Orders
-     heats so jockeys have at least 4 heats between rides, keeps each preparer's
-     horses together and close to the preferred order, and flags data problems.*
-4. **Instructions:** paste the full text from `docs/AGENT_INSTRUCTIONS.md`
-   (section *Instructions*).
-5. **Settings → Generative AI:** set orchestration to **Generative** (the agent
-   chooses tools itself). Leave the model on the default.
-6. Select **Create** / **Save**.
+1. Go to <https://copilotstudio.microsoft.com> and pick the right environment
+   (top right).
+2. **Agents** → **+ New agent** → **Skip to configure**.
+3. **Name:** `NZB Breeze Up Agent`
+   **Description:** *Builds and explains NZB breeze-up heat schedules. Attach the
+   Heat Schedule workbook and ask it to build the schedule.*
+4. **Instructions:** paste the text from `docs/AGENT_INSTRUCTIONS.md`.
+5. **Create**.
+6. **Settings → Generative AI:**
+   - Orchestration: **Generative**.
+   - **File processing capabilities → File uploads: On**. This is what lets
+     James attach the workbook. (The agent doesn't need to read the spreadsheet
+     itself; it passes the file on to the flow.)
+   - **Save**.
+7. **Settings → Security → Authentication:** keep **Authenticate with
+   Microsoft** (the default for Teams). This gives the agent James's email
+   address for the Teams message.
 
-### 2.1 Add knowledge, so the agent can answer "why" questions
+### 2.1 Knowledge (for "why" and "how" questions)
 
-**Knowledge → + Add knowledge**:
+**Knowledge → + Add knowledge → Files:**
+- `docs/BREEZE_UP_RULES.md` (rules, glossary, how to read every output sheet)
+- `25RTR_Breeze_Up_Schedule_Example.xlsx`, or better, a PDF export of its final
+  Monday programme, as an example of a finished programme
 
-1. **Files:** upload `docs/BREEZE_UP_RULES.md` (the plain-English rules,
-   glossary and how to read the output).
-2. **SharePoint:** add the `Sales` folder of the site, so it can find past
-   programmes such as the 25RTR final schedule.
-3. Turn **off** "Allow the AI to use its own general knowledge", so answers stay
-   grounded in NZB material.
+Turn **off** "Allow the AI to use its own general knowledge".
 
 ---
 
 ## Part 3: Create the agent flow "Build Breeze Up Schedule" (about 45 minutes)
 
-1. In the agent, go to **Tools** → **+ Add a tool** → **New tool** → **Agent
-   flow**. (Or: left menu **Flows** → **+ New flow** → **Agent flow**.) The
-   designer opens with the **When an agent calls the flow** trigger and a
-   **Respond to the agent** action already in place.
-2. Rename the flow (top left) to **Build Breeze Up Schedule**.
+1. Left menu **Flows** → **+ New flow** → **Agent flow**. The designer opens with
+   **When an agent calls the flow** and **Respond to the agent**.
+2. Rename it **Build Breeze Up Schedule** (top left).
 
 ### 3.1 Trigger inputs
 
-Select the trigger and add these inputs:
+Select the trigger → **+ Add an input**:
 
-| Input name | Type | Description (the agent reads this) |
+| Type | Name | Notes |
 |---|---|---|
-| `SaleCode` | Text | Sale code, e.g. 26RTR or 27RTR |
-| `PreferLanes` | Number | Preparers breezing at once. 0 = automatic |
-| `Seed` | Number | 0 = normal. Any other number gives an alternative draft |
-| `OnlyDay` | Text | Blank = all days, or a single day such as Mon |
-| `RequesterEmail` | Text | Email of the person asking |
+| **File** | `HeatScheduleFile` | the workbook James attached |
+| Number | `PreferLanes` | preparers breezing at once, 0 = automatic |
+| Number | `Seed` | 0 = normal. Another number gives an alternative version |
+| Text | `OnlyDay` | blank = all days, or e.g. `Tue` |
+| Text | `RequesterEmail` | who gets the Teams message |
 
 ### 3.2 Reply to the agent straight away
 
-Copilot Studio only waits **100 seconds** for a tool, and a big sale can take
-longer than that to solve. So the flow answers first and keeps working.
+Copilot waits at most **100 seconds** for a flow, and the solver can take
+longer. So the flow answers first and keeps working afterwards.
 
-1. Drag the existing **Respond to the agent** action up so it sits directly
-   under the trigger.
-2. Add an output: **Text** `Status` with the value
-   `Started building the [SaleCode] breeze up schedule. I'll message you in Teams when it's ready (usually under 2 minutes).`
-   Replace `[SaleCode]` by picking the **SaleCode** dynamic value from the
-   trigger (the lightning-bolt icon).
-3. In the action's **Settings**, make sure **Asynchronous response** is **Off**.
+1. Drag **Respond to the agent** to sit directly under the trigger.
+2. Add a Text output **Status**:
+   `Thanks, I've got the workbook. I'm building the schedule now and will message you in Teams in about 2 minutes.`
+3. In its **Settings**, check that **Asynchronous response** is **Off**.
 
-### 3.3 Find the workbook
+### 3.3 Save the uploaded workbook to SharePoint
 
-Add **SharePoint → Get file metadata using path**:
-- **Site Address:** your Sales site
-- **File Path:** `/Shared Documents/Sales/@{SaleCode}/Breezeups/Heat Schedule/@{SaleCode}_Heat_Schedule.xlsx`
-  (insert the `SaleCode` dynamic value in both places; adjust to your folder pattern)
+**SharePoint → Create file**:
+- **Site Address:** the Sales site
+- **Folder Path:** `/Shared Documents/Breeze Up Agent/Runs`
+- **File Name** (expression):
+  `concat(formatDateTime(convertFromUtc(utcNow(),'New Zealand Standard Time'),'yyyy-MM-dd HHmm'), ' ', triggerBody()?['file']?['name'])`
+  (In the expression editor, pick the **HeatScheduleFile → name** dynamic value
+  instead of typing the `triggerBody()` part.)
+- **File Content:** the **HeatScheduleFile → contentBytes** dynamic value.
+  If the saved file won't open, wrap it as
+  `base64ToBinary(<contentBytes>)`.
 
-### 3.4 Run the scheduler
+Then **SharePoint → Get file properties**: Site = Sales site, Library =
+Documents, Id = **ItemId** from *Create file*. This gives a link for the Teams
+message.
 
-Add **Excel Online (Business) → Run script from SharePoint library**:
+### 3.4 Read the shared sale rules
+
+1. **Excel Online (Business) → List rows present in a table**:
+   Location = Sales site, Library = Documents,
+   File = `/Breeze Up Agent/Agent Config.xlsx`, Table = `ConfigTable`.
+2. **Data Operation → Select**: From = `value` (from *List rows*).
+   Switch the map to **text mode** and enter
+   `concat(item()?['Setting'], ': ', item()?['Value'])`
+3. **Data Operation → Compose** (rename it **ConfigText**):
+   `join(body('Select'), decodeUriComponent('%0A'))`
+
+### 3.5 Run the scheduler
+
+**Excel Online (Business) → Run script from SharePoint library**:
 
 | Field | Value |
 |---|---|
-| Workbook Location | the Sales site |
-| Workbook Library | Documents |
-| Workbook | **Id** from *Get file metadata using path* (dynamic) |
-| Script Location | the Sales site |
-| Script Library | Documents |
+| Workbook Location / Library | Sales site / Documents |
+| Workbook | **Id** from *Create file* |
+| Script Location / Library | Sales site / Documents |
 | Script | `Breeze Up Agent/Scripts/NZB Breeze Up Agent.osts` |
-| preferLanes | `PreferLanes` (dynamic) |
-| seed | `Seed` (dynamic) |
-| onlyDay | `OnlyDay` (dynamic) |
+| preferLanes | `PreferLanes` |
+| seed | `Seed` |
+| onlyDay | `OnlyDay` |
+| configText | **Outputs** of *ConfigText* |
 
-Open the action's **Settings** and set **Retry policy** to *Fixed interval, 2
-times, PT30S*. This covers the occasional "Conflict 409" when someone has the
-file open.
+In the action's **Settings**, set **Retry policy** to *Fixed interval, count 2,
+interval PT20S*. This covers the brief lock right after the file is created.
 
-### 3.5 Read the result
+### 3.6 Read the result and message James
 
-Add **Data Operation → Parse JSON**:
-- **Content:** `result` from *Run script from SharePoint library*
-- **Schema:** paste this
+1. **Data Operation → Parse JSON**. Content = `result` of *Run script*. Schema:
 
 ```json
 {
@@ -209,189 +229,175 @@ Add **Data Operation → Parse JSON**:
     "sale": { "type": "string" },
     "errors": { "type": "array", "items": { "type": "string" } },
     "warnings": { "type": "array", "items": { "type": "string" } },
-    "days": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "day": { "type": "string" },
-          "heats": { "type": "number" },
-          "clashes": { "type": "number" },
-          "clashList": { "type": "array", "items": { "type": "string" } },
-          "preparersActiveAtOnce": { "type": "number" },
-          "longestPreparerWait": { "type": "number" },
-          "options": { "type": "array", "items": { "type": "string" } },
-          "preparerOrder": { "type": "array", "items": { "type": "string" } }
-        }
-      }
-    }
+    "days": { "type": "array", "items": { "type": "object", "properties": {
+      "day": { "type": "string" },
+      "heats": { "type": "number" },
+      "clashes": { "type": "number" },
+      "clashList": { "type": "array", "items": { "type": "string" } },
+      "preparersActiveAtOnce": { "type": "number" },
+      "longestPreparerWait": { "type": "number" },
+      "options": { "type": "array", "items": { "type": "string" } },
+      "preparerOrder": { "type": "array", "items": { "type": "string" } }
+    } } }
   }
 }
 ```
 
-### 3.6 Tell the user
-
-1. Add **Data Operation → Select**:
-   - From: `days` (from Parse JSON)
-   - Map (switch to text mode):
-     `@{item()['day']}: @{item()['heats']} heats, @{item()['clashes']} jockey clashes, @{item()['preparersActiveAtOnce']} preparers breezing at once (options: @{join(item()['options'], '; ')})`
-2. Add **Microsoft Teams → Post message in a chat or channel**:
-   - Post as: **Flow bot**. Post in: **Chat with Flow bot**
-   - Recipient: `RequesterEmail`
-   - Message:
+2. **Data Operation → Select** (rename **DayLines**): From = `days`. Map, in text mode:
+   `concat(item()?['day'], ': ', item()?['heats'], ' heats, ', item()?['clashes'], ' jockey clashes, ', item()?['preparersActiveAtOnce'], ' preparers at once. Options: ', join(item()?['options'], '; '))`
+3. **Microsoft Teams → Post message in a chat or channel**:
+   Post as **Flow bot**, Post in **Chat with Flow bot**, Recipient = `RequesterEmail`, Message:
 
    ```
-   🏇 NZB Breeze Up Agent: @{SaleCode} draft schedule is ready.
-
-   @{join(body('Select'), '<br>')}
-
-   Data errors: @{length(body('Parse_JSON')?['errors'])}. Warnings: @{length(body('Parse_JSON')?['warnings'])}.
-   @{join(body('Parse_JSON')?['errors'], '<br>')}
-
-   Open the workbook: @{outputs('Get_file_metadata_using_path')?['body/{Link}']}
-   Check the "Validation" and "Clashes" sheets before publishing the programme.
+   🏇 NZB Breeze Up Agent: your draft schedule is ready.
+   [join(body('DayLines'), '<br>')]
+   Data errors to fix: [length(body('Parse_JSON')?['errors'])]
+   [join(body('Parse_JSON')?['errors'], '<br>')]
+   Open the workbook: [Link to item from Get file properties]
+   Check the Validation and Clashes sheets before publishing the programme.
    ```
 
-3. **Error path.** Add a second **Post message** action. In its **…** menu,
-   choose **Configure run after** and tick **has failed** and **has timed
-   out** for *Run script*. Message: *"The breeze up schedule for @{SaleCode}
-   failed: the workbook may be open in desktop Excel, or the sale is too large
-   for one run. Try again with OnlyDay = Mon, then Tue."*
-4. **Save**, then **Publish** the flow.
-
-> **Large sales.** If a run ever times out (Power Automate allows a script 120
-> seconds), lower `annealSteps` in **Agent Config** to 8000, or have the agent
-> run each day separately (`OnlyDay`). Per-day runs write their own
-> `26RTR Mon Summary` / `26RTR Tue Summary` sheets.
+   (Each `[...]` is an expression or dynamic value inserted with the editor.)
+4. **Failure message.** Add another *Post message* with **Configure run after →
+   has failed / has timed out** on *Run script*:
+   *"Sorry, the schedule run failed. Check that the workbook has Mon, Tue, Mon
+   Order and Tue Order sheets and isn't password-protected, then try again, or
+   ask me to run one day at a time."*
+5. **Save** → **Publish**.
 
 ---
 
-## Part 4: Connect the flow to the agent as a tool (about 10 minutes)
+## Part 4: Topic that takes the uploaded file (about 20 minutes)
 
-1. Back in the agent: **Tools** → **+ Add a tool** → **Flow** → choose **Build
-   Breeze Up Schedule** → **Add and configure**.
-2. **Name:** `Build breeze up schedule`
-3. **Description:** *Builds or rebuilds the breeze-up heat schedule for a sale
-   (e.g. 26RTR) in that sale's Heat Schedule workbook. Use when the user asks to
-   create, redo, re-run or change the heat order, or asks for an alternative.
-   Use PreferLanes when the user wants a specific number of preparers breezing
-   at once, and Seed (any number from 1 to 999) when they want a different
-   version.*
-4. **Inputs:**
-   - `SaleCode`: *Dynamically fill with AI* (the agent asks if the user didn't say)
-   - `PreferLanes`: *Dynamically fill with AI*, default `0`
-   - `Seed`: *Dynamically fill with AI*, default `0`
-   - `OnlyDay`: *Dynamically fill with AI*, default blank
-   - `RequesterEmail`: *Set as a value* → formula `System.User.Email`
-     (this needs **Settings → Security → Authenticate with Microsoft**, which is
-     the default for Teams agents)
-5. **Completion:** *Send specific response* → `{Status}`. Or let the agent
-   write the response.
-6. **Save.**
+Uploaded files have to be passed to a flow from a **topic**. (The *Tools* page's
+"fill with AI" option can't pass files.)
 
----
-
-## Part 5: Starter prompts and test (about 20 minutes)
-
-**Overview → Suggested prompts** (add these):
-
-| Title | Prompt |
-|---|---|
-| Build schedule | Build the 26RTR breeze up schedule |
-| Tighter groups | Re-run 26RTR Tuesday with 7 preparers at once |
-| Another version | Give me an alternative 26RTR schedule |
-| New sale setup | What do I need to set up for a new sale? |
-| Explain | Why can't Troy Harris ride in heats next to each other? |
-
-**Test** (the *Test your agent* panel):
-
-1. "Build the 26RTR breeze up schedule". The agent should call the tool, say
-   it has started, and a Teams message should arrive within about 2 minutes.
-2. Open the workbook. Check that the `26RTR Summary` sheet shows **Mon 109
-   heats / 0 clashes** and **Tue 114 heats / 0 clashes** (the expected result
-   for the 26RTR data).
-3. "Redo Tuesday with 7 preparers breezing at once" should call the tool with
-   `PreferLanes=7, OnlyDay=Tue`.
-4. "What's BUO?" should answer from the knowledge file.
-5. Use the **activity map** to confirm which tool and inputs were used.
+1. **Topics → + Add a topic → From blank**. Name it **Build schedule from uploaded file**.
+2. **Trigger:** *The agent chooses*. Description: *The user wants to build,
+   re-run or get an alternative breeze up heat schedule, usually attaching the
+   Heat Schedule workbook.*
+3. **Topic inputs** (**Details** → **Inputs** → *Create a new variable*. Each is
+   filled by the agent from the conversation, not asked as a question):
+   - `PreferLanes` (Number, default 0): *preparers breezing at once, only if
+     the user asks for a number*
+   - `Seed` (Number, default 0): *any new number from 1 to 999 when the user
+     wants another or alternative version*
+   - `OnlyDay` (String, default blank): *a single day such as Mon or Tue, only
+     if the user asks*
+4. **Node: Set variable value.** Variable `Global.HeatFile`. Formula:
+   `If(IsEmpty(System.Activity.Attachments), Global.HeatFile, First(System.Activity.Attachments))`
+   This uses the file attached to the current message, otherwise the one from
+   earlier in the chat, so "another version please" works without re-uploading.
+5. **Node: Condition.** `IsBlank(Global.HeatFile)` is true →
+   **Question** node: *"Please attach the Heat Schedule workbook (with Mon, Tue,
+   Mon Order and Tue Order sheets)."*. Identify: **File**. Under **…** →
+   **Properties** → **Entity recognition**, tick **Include file metadata**.
+   Save the response to `Global.HeatFile`.
+6. **Node: Add a tool → Build Breeze Up Schedule** (the flow). Inputs (formula):
+   - HeatScheduleFile: `{ contentBytes: Global.HeatFile.Content, name: Global.HeatFile.Name }`
+   - PreferLanes: `Topic.PreferLanes`. Seed: `Topic.Seed`. OnlyDay: `Topic.OnlyDay`
+   - RequesterEmail: `System.User.Email`
+7. **Node: Send a message:** `{Topic.Status}` (the flow's Status output).
+8. **Save**.
 
 ---
 
-## Part 6: Publish to Teams and Microsoft 365 Copilot (about 10 minutes)
+## Part 5: Test (about 20 minutes)
 
-1. Select **Publish** (top right) → **Publish**.
-2. **Channels** → **Teams and Microsoft 365 Copilot** → keep **Make agent
-   available in Microsoft 365 Copilot** ticked → **Add channel**.
-3. **Edit details:** short description, NZB icon, accent colour.
-4. **Availability options:** **Show to my teammates and shared users** → add
-   the Sales team's security group. (Use **Show to everyone in my org** only if
-   wanted; that needs admin approval.)
-5. Staff open Teams → **Apps** → **Built for your org** / **Built with Power
-   Platform** → **NZB Breeze Up Agent** → **Add**.
+Test **in Teams early**, because that's where James will attach files.
+
+1. In the **Test your agent** panel, click the paper clip, attach
+   `26RTR_Heat_Schedule.xlsx` and type *"Build the breeze up schedule"*. Expect
+   the "working on it" reply.
+2. Within about 2 minutes: a Teams message from Flow bot, and a new file in
+   `Breeze Up Agent/Runs`. Its `26RTR Summary` sheet should show **Mon 109 heats
+   / 0 clashes** and **Tue 114 heats / 0 clashes**.
+3. In the same chat: *"Redo Tuesday with 7 preparers at once"*. The flow should
+   run with PreferLanes 7 and OnlyDay Tue, without asking for the file again.
+4. *"Give me another version"* should use a new Seed.
+5. *"What is BUO?"* should be answered from the knowledge file.
+6. A message with no attachment, *"Build the schedule"*, should make the agent
+   ask for the workbook.
 
 ---
 
-## Part 7: The Agent Config sheet (how staff change the rules)
+## Part 6: Publish to Teams for James (about 10 minutes)
 
-Every rule that might change between sales lives in the workbook's **Agent
-Config** sheet, not in code. The script creates the sheet the first time it
-runs. Repeatable settings (`day`, `consecutive`, `preparerAlias`,
-`jockeyAlias`) can have as many rows as needed.
+1. **Publish** (top right).
+2. **Channels → Teams and Microsoft 365 Copilot → Add channel**. Keep *Make agent
+   available in Microsoft 365 Copilot* ticked.
+3. **Edit details:** NZB icon, short and long description.
+4. **Availability options → Show to my teammates and shared users** → add James
+   and the Sales team group.
+5. James: Teams → **Apps** → **Built with Power Platform** / **Built for your
+   org** → **NZB Breeze Up Agent** → **Add**. Pin it.
+
+**Suggested prompts** (agent **Overview**): *Build the breeze up schedule* ·
+*Redo Tuesday with 7 preparers at once* · *Give me another version* · *What
+does the Validation sheet mean?* · *What do I need for a new sale?*
+
+---
+
+## Part 7: The Agent Config settings
 
 | Setting | Example | Meaning |
 |---|---|---|
 | saleCode | 27RTR | Label on output sheets |
-| day | `Mon \| Mon \| Mon Order` | Day name \| horses sheet \| preferred-order sheet. Add a row for a third day, e.g. `Wed \| Wed \| Wed Order` |
+| day | `Mon \| Mon \| Mon Order` | Day name \| horses sheet \| preferred-order sheet. One row per day; add `Wed \| Wed \| Wed Order` for a third day |
 | minHeatsBetween | 4 | Heats between a jockey's rides |
 | laneOptions | 5, 6, 7, 8 | Preparers breezing at once to try, tightest first |
 | preferLanes | 0 | Force a width (0 = automatic) |
-| maxBuoShift | 2 | How far a heat may move from the preparer's BUO order (0 = never) |
+| maxBuoShift | 2 | How far a heat may move from the preparer's BUO order |
 | orderFlex | 2 | How far a preparer may move from the preferred order |
-| consecutive | `Prima Park \| Mon \| 2` | Preparer \| day (`*` = every day) \| heats back-to-back |
+| consecutive | `Prima Park \| Mon \| 2` | Preparer \| day (`*` = all) \| heats back-to-back |
 | preparerAlias | `Mark Brooks / Alex Olivera => Mark Brooks` | Merge name variants |
 | jockeyAlias | `Ryan Elliott => Ryan Elliot` | Merge name variants |
-| noJockeyTokens | No Jockey, TBC, TBA | Values meaning no rider booked |
+| noJockeyTokens | No Jockey, TBC | Values meaning no rider booked |
 | startTime / minutesPerHeat | 08:00 / 2 | Optional Time column |
-| annealSteps | 20000 | Optimiser effort. Lower it if the script times out |
-| seed | 26 | Change it for a different equally-good draft |
+| annealSteps | 20000 | Optimiser effort. Use 8000 if runs time out |
+| seed | 26 | Default version number |
 
-**Column headers are matched by name, not position.** For example `Jockey`,
-`Jockey #1`, `Rider` and `Riders` are all accepted, so inserting or reordering
-columns doesn't break anything. Accepted header names are listed in
-`src/core.ts → defaultConfig().columns`.
+If an uploaded workbook contains its own `Agent Config` sheet, that sheet
+**overrides** the shared file for that run. This is useful for a one-off test.
+
+Columns in the uploaded workbook are found **by header name**, so column order
+doesn't matter. `Jockey`, `Jockey #1`, `Rider` and `Riders` all work, and the
+same goes for preparer, vendor, BUO, lot, breeding and colours.
 
 ---
 
-## Part 8: Each new sale (about 10 minutes)
+## Part 8: Each new sale (about 5 minutes for the agent's owner)
 
-1. Create `Sales/<SALE>/Breezeups/Heat Schedule/<SALE>_Heat_Schedule.xlsx` with
-   the usual sheets (`Mon`, `Tue`, `Mon Order`, `Tue Order`). Any number of
-   preparers, horses and jockeys is fine.
-2. Copy last sale's **Agent Config** sheet into it. Update `saleCode`, review
-   the `consecutive` rules (is Prima Park still sending pairs? Is anyone else?)
-   and clear old aliases.
-3. In Teams: *"Build the <SALE> breeze up schedule"*.
-4. Fix anything in the **Validation** sheet that is marked **ERROR** (duplicate
-   lots, a lot on two days, missing BUO), then ask the agent to run it again.
-5. Look at **Options** to choose between clash-free and tighter grouping, and
-   ask for that width if needed.
-6. Review `Mon Programme` / `Tue Programme`, make any manual tweaks, and
-   publish.
+1. Open `Breeze Up Agent/Agent Config.xlsx`:
+   - update `saleCode` (e.g. 27RTR);
+   - review the `consecutive` rows (is Prima Park still sending pairs, and on
+     which day? Anyone else?);
+   - delete last year's `preparerAlias` / `jockeyAlias` rows that no longer apply.
+2. Tell James it's ready. He uploads the new Heat Schedule workbook. New
+   preparers, vendors, jockeys and any number of lots need **no changes**.
+3. James fixes anything marked **ERROR** in the Validation sheet (in his own
+   file) and uploads again.
 
 ---
 
 ## Part 9: Governance and support
 
-- **Solution:** build the agent and flow inside a Power Platform **solution**
-  (e.g. *NZB Breeze Up Agent*) so you can move dev → prod and keep versions.
-- **Connections:** the flow runs Excel and SharePoint with the **maker's**
-  connection by default. Use a shared service account for production, so the
-  flow doesn't break when one person changes role.
-- **Script updates:** when the code in this repository changes, run
-  `npm run build:office`, open the `.osts` in Excel → Code Editor, paste the new
-  `dist-office/NZB_Breeze_Up_Agent.ts`, and **Save**. The flow picks it up
-  automatically.
-- **Ownership:** a primary and a backup owner for the agent, the flow and the
-  script folder.
-- **Usage:** Copilot Studio **Analytics** shows runs and failures. Flow run
-  history shows script errors.
+- Build the agent and flow inside a Power Platform **solution** (*NZB Breeze Up
+  Agent*) so you can move dev → prod and keep versions.
+- Use a shared service account for the flow's SharePoint, Excel and Teams
+  connections, so it doesn't break when people change roles.
+- Clean-up: optionally add a scheduled flow that deletes `Runs` files older than
+  90 days.
+- **Script updates:** after code changes here, run `npm run build:office`, open
+  the `.osts` in Excel's Code Editor, paste the new
+  `dist-office/NZB_Breeze_Up_Agent.ts`, and **Save**.
+- **Troubleshooting:** look in Copilot Studio **Analytics** and the flow's
+  **run history**. A failed *Run script* step shows the script's error message.
+
+### Alternative: no upload, file stays in SharePoint
+
+If attachments are blocked in your tenant, James can instead save the workbook
+as `Sales/<SALE>/Breezeups/Heat Schedule/<SALE>_Heat_Schedule.xlsx` and say
+*"Build the 27RTR schedule"*. In that case the flow takes a `SaleCode` text input
+and uses **Get file metadata using path** in place of *Create file*. All other
+steps stay the same.

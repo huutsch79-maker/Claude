@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { configFromSheet, defaultConfig, mergeConfig, run, type Cell, type SchedulerConfig } from "../src/core.js";
+import { configFromSheet, configFromText, defaultConfig, mergeConfig, run, type Cell, type SchedulerConfig } from "../src/core.js";
 
 // Synthetic sale builder: nothing here is 26RTR-specific, which is the point -
 // vendors, lot numbers, jockeys and days are all invented per test.
@@ -204,5 +204,29 @@ describe("Agent Config sheet", () => {
     ]);
     expect(cfg.preparerAliases["Mark Brooks / Alex Olivera"]).toBe("Mark Brooks");
     expect(cfg.jockeyAliases["Ryan Elliott"]).toBe("Ryan Elliot");
+  });
+});
+
+describe("shared config text (uploaded workbook without an Agent Config sheet)", () => {
+  it("parses setting: value lines", () => {
+    const cfg = configFromText("saleCode: 27RTR\nconsecutive: Prima Park | Mon | 2\npreparerAlias: A / B => A\n\nnot a setting", defaultConfig());
+    expect(cfg.saleCode).toBe("27RTR");
+    expect(cfg.consecutivePreparers).toEqual([{ preparer: "Prima Park", day: "Mon", heatsPerTurn: 2 }]);
+    expect(cfg.preparerAliases["A / B"]).toBe("A");
+  });
+
+  it("applies shared rules, and a workbook Agent Config sheet overrides them", () => {
+    const preps: PrepSpec[] = [
+      { name: "P1", heats: 3, jockeys: ["a", "b", "c", "d"] },
+      { name: "P2", heats: 3, jockeys: ["e", "f", "g", "h"] },
+    ];
+    const sheets: Record<string, Cell[][]> = { Mon: horsesSheet("Mon", preps), "Mon Order": orderSheet("Mon", ["P1", "P2"]) };
+    const text = "saleCode: 27RTR\nday: Mon | Mon | Mon Order\nminHeatsBetween: 1";
+    expect(run(reader(sheets), mergeConfig(fast), {}, text).config.saleCode).toBe("27RTR");
+    expect(run(reader(sheets), mergeConfig(fast), {}, text).config.minHeatsBetween).toBe(1);
+    sheets["Agent Config"] = [["Setting", "Value"], ["saleCode", "OVERRIDE"]];
+    const res = run(reader(sheets), mergeConfig(fast), {}, text);
+    expect(res.config.saleCode).toBe("OVERRIDE");
+    expect(res.config.minHeatsBetween).toBe(1);
   });
 });

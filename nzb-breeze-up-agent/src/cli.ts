@@ -28,7 +28,7 @@ function cellValue(v: ExcelJS.CellValue): Cell {
 async function main(): Promise<void> {
   const input = process.argv[2];
   if (!input || input.startsWith("--")) {
-    console.error("usage: npm run schedule -- <input.xlsx> [--config file.json] [--out file.xlsx] [--day Mon]");
+    console.error("usage: npm run schedule -- <input.xlsx> [--config file.json] [--out file.xlsx] [--day Mon] [--config-text agent-config.txt]");
     process.exit(2);
   }
   const cfgPath = arg("--config");
@@ -52,7 +52,8 @@ async function main(): Promise<void> {
 
   const t0 = Date.now();
   const onlyDay = arg("--day");
-  const res = run(reader, cfg, onlyDay ? { onlyDay } : {});
+  const sharedCfg = arg("--config-text");
+  const res = run(reader, cfg, onlyDay ? { onlyDay } : {}, sharedCfg ? readFileSync(sharedCfg, "utf8") : "");
   const ms = Date.now() - t0;
 
   const outWb = new ExcelJS.Workbook();

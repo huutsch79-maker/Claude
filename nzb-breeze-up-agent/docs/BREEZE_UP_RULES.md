@@ -73,11 +73,19 @@ it tries 6, then 7, and so on.
 - **NO_JOCKEY**: no rider booked. That horse is ignored for clash checks.
 - **CLASHES_REMAIN / CLASH_FREE**: the final result for the day.
 
-## Setting up a new sale
-1. Create `Sales/<SALE>/Breezeups/Heat Schedule/<SALE>_Heat_Schedule.xlsx` with sheets
-   `Mon`, `Tue`, `Mon Order`, `Tue Order`. Columns are found by header name, so
-   their order doesn't matter. New preparers, vendors, jockeys and any number of
-   lots are handled automatically.
-2. Copy the *Agent Config* sheet from the last sale, then update `saleCode` and
-   the special rules.
-3. Ask NZB Breeze Up Agent to build the schedule. Fix the ERROR lines and re-run.
+## Using the agent
+1. Open NZB Breeze Up Agent in Teams, attach the sale's Heat Schedule workbook
+   (sheets `Mon`, `Tue`, `Mon Order`, `Tue Order`) and ask it to build the schedule.
+   Columns are found by header name, so their order doesn't matter. New
+   preparers, vendors, jockeys and any number of lots are handled automatically.
+   The jockey rides file isn't needed.
+2. A Teams message brings back the summary and a link to your workbook copy
+   (in SharePoint › Breeze Up Agent › Runs) with the draft sheets added.
+3. Fix any ERROR lines in your own workbook and upload it again. Ask for "another
+   version" or "7 preparers at once" to compare options.
+
+## Setting up a new sale (agent owner)
+Update the shared `Breeze Up Agent/Agent Config.xlsx` in SharePoint: change
+`saleCode`, check the `consecutive` rules (e.g. Prima Park | Mon | 2), and remove
+old aliases. A workbook's own `Agent Config` sheet overrides the shared file for
+that run.

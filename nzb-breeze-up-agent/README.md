@@ -6,8 +6,10 @@ Builds NZB breeze-up heat schedules:
 - special rules (e.g. Prima Park sends 2 heats back-to-back) honoured;
 - data problems flagged.
 
-It is used through a Copilot Studio agent in Teams. The solver itself is an Excel
-Office Script.
+Staff attach the sale's Heat Schedule workbook to the **NZB Breeze Up Agent**
+Copilot agent in Teams and get the draft schedule back. The solver itself is an
+Excel Office Script. The sale rules live in a shared `Agent Config.xlsx` in
+SharePoint (template: `templates/Agent_Config.xlsx`).
 
 | Read this | For |
 |---|---|
@@ -27,10 +29,11 @@ npm run schedule -- "26RTR_Heat_Schedule.xlsx" --config config/rtr26.config.json
 npm run build:office           # regenerate dist-office/NZB_Breeze_Up_Agent.ts after changing src/
 ```
 
-Optional flags for `schedule`: `--day Mon` schedules one day only.
+Optional flags for `schedule`: `--day Mon` schedules one day only. `--config-text config/rtr26.agent-config.txt` uses the shared Agent Config text format, the same way the agent flow does.
 
-Settings precedence: built-in defaults < `--config` JSON < the workbook's
-**Agent Config** sheet < run-time parameters (`preferLanes`, `seed`, `onlyDay`).
+Settings precedence: built-in defaults < `--config` JSON < shared config text
+(`--config-text` / SharePoint Agent Config) < the workbook's **Agent Config** sheet
+< run-time parameters (`preferLanes`, `seed`, `onlyDay`).
 
 Sale workbooks are not committed. `*.xlsx` and `output/` are git-ignored, so
 lot, jockey and preparer data stays in SharePoint.

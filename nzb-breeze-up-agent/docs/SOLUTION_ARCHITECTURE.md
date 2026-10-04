@@ -24,22 +24,28 @@ and **114 heats (216 horses, 28 preparers, 30 jockeys) on Tuesday**.
 
 ```
 ┌────────────── Microsoft 365 ────────────────────────────────────────────┐
-│ Teams / M365 Copilot ─► NZB Breeze Up Agent (Copilot Studio)            │
-│                              │ knowledge: BREEZE_UP_RULES.md, past       │
-│                              │            programmes in SharePoint      │
-│                              ▼ tool                                      │
-│                Agent flow "Build Breeze Up Schedule"                     │
-│                  ├─ Respond to agent ("started")      (<100 s rule)      │
-│                  ├─ Get file metadata (Sales/<SALE>/Breezeups/...)       │
-│                  ├─ Run script from SharePoint library (≤120 s)          │
-│                  │     └─ NZB_Breeze_Up_Agent.osts  (core.ts + main.ts)  │
-│                  └─ Teams message: summary + link                        │
-│ SharePoint: <SALE>_Heat_Schedule.xlsx                                    │
-│   inputs : Mon, Tue, Mon Order, Tue Order, Agent Config                  │
-│   outputs: <SALE> Summary / Schedule / Programme / Preparers / Jockeys / │
-│            Options / Clashes / Validation / Agent Config (used)          │
+│ James in Teams / M365 Copilot: attaches <SALE>_Heat_Schedule.xlsx       │
+│        ▼                                                                 │
+│ NZB Breeze Up Agent (Copilot Studio)                                     │
+│   knowledge: BREEZE_UP_RULES.md, past programme example                  │
+│   topic "Build schedule from uploaded file" (file → flow)                │
+│        ▼                                                                 │
+│ Agent flow "Build Breeze Up Schedule"                                    │
+│   ├─ Respond to agent ("working on it")               (<100 s rule)      │
+│   ├─ Create file  → SharePoint › Breeze Up Agent › Runs › <date> <name>  │
+│   ├─ List rows  ← Breeze Up Agent › Agent Config.xlsx (ConfigTable)      │
+│   ├─ Run script from SharePoint library (≤120 s)                         │
+│   │     └─ NZB_Breeze_Up_Agent.osts (core.ts + main.ts), configText      │
+│   └─ Teams message: summary + link to the run's workbook                 │
+│ Run workbook = James's sheets + <SALE> Summary / Schedule / Programme /  │
+│   Preparers / Jockeys / Options / Clashes / Validation / Config (used)   │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
+
+**Settings come from three places** (later wins): built-in defaults < shared
+`Agent Config.xlsx` in SharePoint (sale rules, maintained once per sale) < an
+`Agent Config` sheet in the uploaded workbook (one-off overrides) < what the user
+asks in chat (preparers at once, version/seed, single day).
 
 **Same engine in three hosts.** `src/core.ts` has no imports and no host APIs.
 It runs as:
@@ -113,7 +119,7 @@ fewer than 4 heats between them**.
 | 10 | *Jockeys_Rides.xlsx → Riders* mixes per-preparer and per-jockey totals (e.g. Courtney Barnes: Count 1, Mon 6) and is a manual copy | Error-prone second source of truth | **Retire as an input.** The agent derives jockey loads from the Heat Schedule and outputs a *Jockeys* sheet |
 | 11 | Heavy jockeys: **Troy Harris 20 rides in 109 Monday heats** (needs ≥ 96), Ryan Elliot 18–19, George Rooke 17–18, Sam Collett 17 on Tuesday | These riders shape the whole day | Flagged as JOCKEY_HEAVY. Share with preparers early |
 | 12 | Last year's example workbook has `#N/A` / `#REF!` in the Tuesday, Stabling and Schedule_Tuesday sheets | Broken lookup chains | Outputs are now values written by the script, not formula chains |
-| 13 | Working files are on `S:\SALES\…` | Cloud services (Office Scripts, Copilot, Power Automate) can't reach network drives | Move to SharePoint (see setup Part 0.1) |
+| 13 | Working files are on `S:\SALES\…` | Cloud services (Office Scripts, Copilot, Power Automate) can't reach network drives | Upload to the agent in Teams. The agent saves each run to SharePoint › Breeze Up Agent › Runs. Longer term, keep sale files in SharePoint |
 | 14 | Name spellings drift across years (*Ryan Elliott* in 25RTR, *Ryan Elliot* in 26RTR; *S Collett* vs *Sam Collett*) | History and analytics get split | Keep a jockey master list (a SharePoint list), and later feed aliases from it |
 
 ## 6. Roadmap (optional next steps)
@@ -134,7 +140,9 @@ nzb-breeze-up-agent/
   src/cli.ts             Node runner (xlsx in → draft xlsx out)
   src/office/main.ts     Office Script entry point (Excel / Power Automate)
   dist-office/NZB_Breeze_Up_Agent.ts   generated single-file Office Script to paste into Excel
-  config/rtr26.config.json             26RTR settings (same keys as the Agent Config sheet)
+  config/rtr26.config.json             26RTR settings for the CLI (JSON)
+  config/rtr26.agent-config.txt        same, in the shared Agent Config text format
+  templates/Agent_Config.xlsx          shared Agent Config file to put in SharePoint (table ConfigTable)
   test/                  vitest suite, including synthetic "next year" sales
   docs/                  setup guide, agent instructions, rules (knowledge), this document
 ```

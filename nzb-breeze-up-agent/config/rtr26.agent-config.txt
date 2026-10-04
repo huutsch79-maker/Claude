@@ -1,0 +1,13 @@
+saleCode: 26RTR
+day: Mon | Mon | Mon Order
+day: Tue | Tue | Tue Order
+minHeatsBetween: 4
+laneOptions: 5, 6, 7, 8
+preferLanes: 0
+maxBuoShift: 2
+orderFlex: 2
+consecutive: Prima Park | Mon | 2
+preparerAlias: Mark Brooks / Alex Olivera => Mark Brooks
+noJockeyTokens: No Jockey, TBC, TBA, N/A, -, None
+annealSteps: 20000
+seed: 26

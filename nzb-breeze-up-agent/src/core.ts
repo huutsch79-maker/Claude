@@ -290,6 +290,21 @@ export function configFromSheet(values: Cell[][], base: SchedulerConfig): Schedu
   return cfg;
 }
 
+/**
+ * Same settings as text, one per line: "setting: value" (e.g. "consecutive: Prima Park | Mon | 2").
+ * Used when the rules live in a shared SharePoint config file instead of the
+ * uploaded workbook; Power Automate joins the config table's rows into this text.
+ */
+export function configFromText(text: string, base: SchedulerConfig): SchedulerConfig {
+  const rows: Cell[][] = [];
+  for (const line of text.split(/\r?\n/)) {
+    const i = line.indexOf(":");
+    if (i <= 0) continue;
+    rows.push([line.slice(0, i).trim(), line.slice(i + 1).trim()]);
+  }
+  return configFromSheet(rows, base);
+}
+
 /** A filled-in Agent Config sheet for the given config (used to create the sheet the first time). */
 export function configToSheet(cfg: SchedulerConfig): Cell[][] {
   const rows: Cell[][] = [
@@ -1202,13 +1217,15 @@ export interface SheetReader {
 }
 
 /**
- * Precedence: defaults/baseCfg < "Agent Config" sheet < overrides (run-time
+ * Precedence: defaults/baseCfg < shared config text (SharePoint Agent Config
+ * file) < "Agent Config" sheet inside the workbook < overrides (run-time
  * parameters from the CLI or Power Automate).
  */
-export function run(read: SheetReader, baseCfg: SchedulerConfig, overrides: Partial<SchedulerConfig> = {}): RunResult {
+export function run(read: SheetReader, baseCfg: SchedulerConfig, overrides: Partial<SchedulerConfig> = {}, configText = ""): RunResult {
   const issues: Issue[] = [];
+  const shared = configText.trim() !== "" ? configFromText(configText, baseCfg) : baseCfg;
   const sheetCfg = read(CONFIG_SHEET);
-  const cfg: SchedulerConfig = { ...(sheetCfg ? configFromSheet(sheetCfg, baseCfg) : baseCfg), ...overrides };
+  const cfg: SchedulerConfig = { ...(sheetCfg ? configFromSheet(sheetCfg, shared) : shared), ...overrides };
   const byDay = new Map<string, Horse[]>();
   const orders = new Map<string, OrderEntry[]>();
   for (const d of cfg.days) {

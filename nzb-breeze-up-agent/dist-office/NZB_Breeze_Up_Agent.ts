@@ -15,9 +15,12 @@
 //   seed        - change to get an alternative, equally-valid draft (0 = keep)
 //   onlyDay     - schedule just one day, e.g. "Mon" ("" = all days). Use one
 //                 call per day if a large sale hits the script time limit.
+//   configText  - the sale rules from the shared Agent Config file, one
+//                 "setting: value" per line. Lets a user upload a plain Heat
+//                 Schedule workbook to the agent without an Agent Config sheet.
 // ===========================================================================
 
-function main(workbook: ExcelScript.Workbook, preferLanes: number = 0, seed: number = 0, onlyDay: string = ""): string {
+function main(workbook: ExcelScript.Workbook, preferLanes: number = 0, seed: number = 0, onlyDay: string = "", configText: string = ""): string {
   const read = (name: string): Cell[][] | null => {
     const ws = workbook.getWorksheets().find((w) => w.getName().trim().toLowerCase() === name.trim().toLowerCase());
     if (!ws) return null;
@@ -38,14 +41,14 @@ function main(workbook: ExcelScript.Workbook, preferLanes: number = 0, seed: num
   };
 
   const cfg = defaultConfig();
-  // First run: create the Agent Config sheet so staff can edit the rules.
-  if (!read(CONFIG_SHEET)) writeSheet(workbook, CONFIG_SHEET, configToSheet(cfg));
+  // Without shared config text, create an Agent Config sheet so staff can edit the rules in the workbook.
+  if (configText.trim() === "" && !read(CONFIG_SHEET)) writeSheet(workbook, CONFIG_SHEET, configToSheet(cfg));
 
   const overrides: Partial<SchedulerConfig> = {};
   if (preferLanes > 0) overrides.preferLanes = preferLanes;
   if (seed > 0) overrides.seed = seed;
   if (onlyDay.trim() !== "") overrides.onlyDay = onlyDay.trim();
-  const res = run(read, cfg, overrides);
+  const res = run(read, cfg, overrides, configText);
 
   // Per-day runs keep their own Summary/Validation sheets so they don't overwrite each other.
   const dayTag = overrides.onlyDay ? `${overrides.onlyDay} ` : "";
@@ -374,6 +377,21 @@ function configFromSheet(values: Cell[][], base: SchedulerConfig): SchedulerConf
   cfg.preparerAliases = prepAliases;
   cfg.jockeyAliases = jockAliases;
   return cfg;
+}
+
+/**
+ * Same settings as text, one per line: "setting: value" (e.g. "consecutive: Prima Park | Mon | 2").
+ * Used when the rules live in a shared SharePoint config file instead of the
+ * uploaded workbook; Power Automate joins the config table's rows into this text.
+ */
+function configFromText(text: string, base: SchedulerConfig): SchedulerConfig {
+  const rows: Cell[][] = [];
+  for (const line of text.split(/\r?\n/)) {
+    const i = line.indexOf(":");
+    if (i <= 0) continue;
+    rows.push([line.slice(0, i).trim(), line.slice(i + 1).trim()]);
+  }
+  return configFromSheet(rows, base);
 }
 
 /** A filled-in Agent Config sheet for the given config (used to create the sheet the first time). */
@@ -1288,13 +1306,15 @@ interface SheetReader {
 }
 
 /**
- * Precedence: defaults/baseCfg < "Agent Config" sheet < overrides (run-time
+ * Precedence: defaults/baseCfg < shared config text (SharePoint Agent Config
+ * file) < "Agent Config" sheet inside the workbook < overrides (run-time
  * parameters from the CLI or Power Automate).
  */
-function run(read: SheetReader, baseCfg: SchedulerConfig, overrides: Partial<SchedulerConfig> = {}): RunResult {
+function run(read: SheetReader, baseCfg: SchedulerConfig, overrides: Partial<SchedulerConfig> = {}, configText = ""): RunResult {
   const issues: Issue[] = [];
+  const shared = configText.trim() !== "" ? configFromText(configText, baseCfg) : baseCfg;
   const sheetCfg = read(CONFIG_SHEET);
-  const cfg: SchedulerConfig = { ...(sheetCfg ? configFromSheet(sheetCfg, baseCfg) : baseCfg), ...overrides };
+  const cfg: SchedulerConfig = { ...(sheetCfg ? configFromSheet(sheetCfg, shared) : shared), ...overrides };
   const byDay = new Map<string, Horse[]>();
   const orders = new Map<string, OrderEntry[]>();
   for (const d of cfg.days) {
