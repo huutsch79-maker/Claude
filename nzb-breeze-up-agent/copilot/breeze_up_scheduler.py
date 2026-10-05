@@ -8,7 +8,7 @@ wb=openpyxl.load_workbook(F,data_only=True);E=[];seen={}
 def rows(n):return [list(r) for w in wb if k(w.title)==k(n) for r in w.iter_rows(values_only=True)]
 def col(h,*ns):return next((i for f in(str.__eq__,str.startswith) for n in ns for i,x in enumerate(h) if f(k(x),n)),-1)
 def load(d):
- R=rows(d);h=R[0];P,B,L,J,V,G=[col(h,*n) for n in(('preparer name','preparer'),('buo',),('lot',),('jockey','rider'),('vendor',),('breeding',))]
+ R=rows(d);h=R[0];P,B,L,J,V,G,D=[col(h,*n) for n in(('preparer name','preparer'),('buo',),('lot',),('jockey','rider'),('vendor',),('breeding',),('day',))]
  if min(P,B,L,J)<0:raise SystemExit(d+': needs Preparer, BUO, Lot, Jockey columns')
  H={};nm={}
  for r in R[1:]:
@@ -16,6 +16,7 @@ def load(d):
   p=ALIAS.get(k(r[P]),k(r[P]));nm[p]=r[P];j=k(r[J]);lot=r[L]
   if lot in seen:E.append(f'ERROR lot {lot} listed twice ({seen[lot]}, {d})')
   seen[lot]=d
+  if D>=0 and r[D] and k(r[D])[:3]!=k(d)[:3]:E.append(f'WARNING lot {lot} is on the {d} sheet but Day says {r[D]}')
   try:b=float(r[B])
   except:E.append(f'ERROR {d} lot {lot}: BUO not a number');b=999
   H.setdefault((p,b),[]).append((r[P],r[V] if V>=0 else '',r[B],lot,r[G] if G>=0 else '',str(r[J] or '-'),'' if j in('','no jockey','tbc','-') else j))
@@ -102,7 +103,21 @@ def solve(H,O,T,tl,seed):
   r[:],K[:],S[:],M[:]=s;Q[0]=dec()
   c,q=sa(lambda:Q[0][:],qm,cost(Q[0],30,1),30,1,te,3,.3)
   if c<B[0]:B=(c,q)
- return [h for p,i in B[1] for h in U[p][i][0]]
+ q=B[1]
+ if B[0]==0:
+  def nv(q):
+   f=[0]*P;t=0
+   for p,i in q:
+    if f[p]==0:f[p]=t+1
+    t+=len(U[p][i][0])
+   return sum(f[a]>f[b] for a in range(P) for b in range(a+1,P))
+  v=nv(q)
+  while time.time()<t9:
+   z=q[:];i=Rn.randrange(len(z));j=min(len(z)-1,max(0,i+Rn.randint(-12,12)));z.insert(j,z.pop(i))
+   if cost(z,1,1)==0:
+    w=nv(z)
+    if w<=v:q,v=z,w
+ return [h for p,i in q for h in U[p][i][0]]
 out=openpyxl.load_workbook(F);S=[]
 for dn in DAYS or [w.title for w in wb if k(w.title)[:3] in 'mon tue wed thu fri sat sun'.split() and ' ' not in k(w.title)]:
  H,O,T=load(dn);seq=solve(H,O,T,TL,SEED);ws=out.create_sheet(dn+' Schedule');R={h:i for p in O for i,h in enumerate(sorted(x for x in H if x[0]==p))};IN={h for p in O for u in T[p] for h in u[1:]}

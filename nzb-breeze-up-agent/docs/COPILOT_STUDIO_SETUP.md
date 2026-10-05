@@ -23,14 +23,18 @@ The output workbook contains all of James's original sheets plus:
   check: OK / CLASH / PREP GAP / BUO MOVE;
 - **Mon Jockeys** / **Tue Jockeys**: each jockey's rides, first and last heat and
   longest wait (longest day first);
-- **Validation**: the summary, duplicate lots, preparers missing from the order
-  sheet, and BUO or jockey problems in the data.
+- **Validation**: the summary, duplicate lots, horses whose Day column doesn't
+  match their sheet, preparers missing from the order sheet, and BUO or jockey
+  problems in the data.
 
 The scheduler needs only Python and NumPy, which Copilot's code interpreter has
 (no extra packages). Tested on 26RTR, with every result checked by a separate
 script: jockeys always have at least 4 heats between rides (0 clashes on both
-days). **Tuesday** meets every rule (0 preparer gaps over 8, BUO moves of at
-most 2). **Monday** typically has 0 to 5 preparer gaps of 9 heats, flagged PREP GAP.
+days in almost every run). **Tuesday** usually meets every rule (0 preparer gaps
+over 8, BUO moves of at most 2); when it does, the time left over is used to pull
+preparers closer to the Order sheet. **Monday** typically has 2 to 7 preparer
+gaps (mostly 9 heats), flagged PREP GAP. Each run differs; ask for "another
+version" to try again, and keep the best.
 Monday is the hard day: Troy Harris, George Rooke and Ryan Elliot have 18 to 20
 rides each. Prima Park's Monday heats always go out in back-to-back pairs. A run
 takes about 3 to 4 minutes for both days.
