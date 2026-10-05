@@ -38,18 +38,19 @@ to the preferred order.
    on Monday has four jockeys, so it sends 2 of its heats consecutively. Check
    this every sale.
 
-## Preparers in succession (most important after jockey gaps)
-Preparers arrive with all their horses and their stalls must be freed for later
-arrivals, so each preparer breezes **in succession, as close together as its
-jockeys allow**. The agent works out each preparer's *tightest possible span* (how
-tightly its heats could run, given its own jockeys need 4 heats between rides), and
-strongly penalises any extra spread, especially large stretches of small preparers.
-New preparers start mainly to fill gaps while earlier preparers' jockeys are
-recovering. The Validation sheet lists each preparer's first and last heat.
-
-To tighten a day further, change the preferred order so preparers who share busy
-jockeys are not on course together. For example, for 26RTR Monday, putting Prima
-Park first (as in 25RTR) cut the total spread from about 600 to about 500 heats.
+## Rule priority (updated with James)
+1. **Preparers first: 4 to 8 heats between two heats of the same preparer.**
+   This keeps every preparer in succession: they arrive with all their horses and
+   their stalls must be freed for later arrivals. Prima Park on Monday sends its
+   heats in back-to-back pairs, with 4 to 8 heats between pairs. The schedule
+   always meets this rule; the "Preparer gap" column shows it for every heat.
+2. **Jockeys second: at least 4 heats between rides.** Where the bookings make this
+   impossible together with rule 1 (the busiest riders with 14 to 20 rides a day,
+   booked by several preparers), the schedule keeps clashes as mild as possible
+   (usually 3 heats between instead of 4, never back-to-back) and marks them CLASH,
+   to be fixed manually, e.g. by changing the rider for that horse.
+3. Preferred order (Order sheets) and BUO order (moves of at most 2 places).
+4. Shorter jockey waits.
 
 ## How the draft is built
 The scheduler uses the same "rolling wave" pattern as the 25RTR final programme.
