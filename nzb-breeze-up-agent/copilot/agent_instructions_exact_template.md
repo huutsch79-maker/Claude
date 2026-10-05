@@ -15,7 +15,7 @@ Each new sale, change only the settings lines near the top of the code:
 - `GAP` – heats between a jockey's rides (4)
 - `VMIN` / `VMAX` – heats between two heats of the same preparer (4 / 8)
 - `SHIFT` – how many places a heat may move from the BUO order (2)
-- `TL` – seconds the solver may search per day (90)
+- `TL` – seconds the solver may search per day (300). Monday 26RTR needs about 3 minutes
 
 The text is close to the 8,000-character limit. Regenerate it with
 `python3 scripts/build-agent-instructions.py` after any edit, so the length is checked.
