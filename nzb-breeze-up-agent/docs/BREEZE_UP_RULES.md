@@ -38,19 +38,26 @@ to the preferred order.
    on Monday has four jockeys, so it sends 2 of its heats consecutively. Check
    this every sale.
 
-## Rule priority (updated with James)
-1. **Preparers first: 4 to 8 heats between two heats of the same preparer.**
-   This keeps every preparer in succession: they arrive with all their horses and
-   their stalls must be freed for later arrivals. Prima Park on Monday sends its
-   heats in back-to-back pairs, with 4 to 8 heats between pairs. The schedule
-   always meets this rule; the "Preparer gap" column shows it for every heat.
-2. **Jockeys second: at least 4 heats between rides.** Where the bookings make this
-   impossible together with rule 1 (the busiest riders with 14 to 20 rides a day,
-   booked by several preparers), the schedule keeps clashes as mild as possible
-   (usually 3 heats between instead of 4, never back-to-back) and marks them CLASH,
-   to be fixed manually, e.g. by changing the rider for that horse.
+## Rule priority (agreed with NZB)
+1. **Jockeys: never fewer than 4 heats between a jockey's rides.** A jockey may ride
+   for several preparers, but always with at least 4 heats in between. This is never
+   broken.
+2. **Preparers: 4 to 8 heats between two heats of the same preparer**, so preparers
+   breeze in succession (they arrive with all their horses; stalls must be freed for
+   later arrivals). Never fewer than 4. More than 8 only where rule 1 makes it
+   unavoidable with the bookings; those heats are flagged **PREP GAP** and the
+   "Preparer gap" column shows the gap before every heat. Prima Park on Monday sends
+   back-to-back pairs.
 3. Preferred order (Order sheets) and BUO order (moves of at most 2 places).
 4. Shorter jockey waits.
+
+If preparers should come first instead (gap 4 to 8 always, jockey clashes allowed
+and flagged CLASH), ask the agent for "preparers first".
+
+Where both rules collide, the fix is in the bookings or the order: for 26RTR Tuesday
+Ryan Elliot rides for five preparers that are on course together, and Jasmine
+Fawcett rides all of Kit Brooks' and most of Kilgravin's heats. Changing a few riders
+or moving Kilgravin after Kit Brooks in the Tue Order removes most PREP GAP flags.
 
 ## How the draft is built
 The scheduler uses the same "rolling wave" pattern as the 25RTR final programme.

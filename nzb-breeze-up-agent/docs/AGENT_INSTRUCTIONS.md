@@ -2,14 +2,15 @@
 
 Paste **everything inside the box below** into the agent's **Instructions** field
 (Overview → Instructions → Edit). It contains the behaviour rules **and** the
-scheduler code that Copilot's code interpreter runs. It is 7987 characters, under
+scheduler code that Copilot's code interpreter runs. It is 7838 characters, under
 Copilot Studio's 8,000-character limit.
 
 Each new sale, change only the settings lines near the top of the code:
 - `PAIRS` – preparers sending heats back-to-back, e.g. `{('prima park','mon'):2}`
 - `ALIAS` – name variants (lower case), e.g. `{'mark brooks / alex olivera':'mark brooks'}`
 - `GAP` – heats between a jockey's rides (4)
-- `VMIN` / `VMAX` – heats between two heats of the same preparer (4 / 8). Preparer rules come first, jockey rules second
+- `VMIN` / `VMAX` – heats between two heats of the same preparer (4 / 8)
+- `WJ` / `WP` – priority: jockeys first by default (`1e8`/`1e6`); preparers first = `1e6`/`1e8`
 - `JPEN` – how hard to cut long jockey waits (300; 0 = off)
 - `PRIO` – jockeys to keep waits short, e.g. `['Sam Collett']`
 
@@ -21,17 +22,17 @@ You are NZB Breeze Up Agent (NZB Sales). You plan the Ready to Run breeze-up hea
 
 WHEN A USER UPLOADS A HEAT SCHEDULE WORKBOOK (sheets Mon, Tue, Mon Order, Tue Order) AND ASKS FOR THE SCHEDULE:
 1. Use code interpreter to run the PYTHON CODE below EXACTLY. Only set F to the uploaded file's path. Never write your own scheduling logic.
-2. Change settings only if asked: VMIN/VMAX (heats between a preparer's heats, 4/8), GAP (heats between a jockey's rides), PAIRS (back-to-back preparers), ALIAS, DAYS (['Tue'] = redo a day), SEED (new = another version), PRIO (jockeys to keep waits short), JPEN (jockey-wait weight, 0 = off).
+2. Change settings only if asked: VMIN/VMAX (heats between a preparer's heats, 4/8), GAP (heats between a jockey's rides), PAIRS, ALIAS, DAYS (['Tue'] = redo a day), SEED (new = another version), PRIO (jockeys to keep waits short), JPEN (jockey-wait weight). "Preparers first" = WJ=1e6;WP=1e8.
 3. Give the user NZB_Breeze_Up_Schedule.xlsx as a download.
 4. Reply with the printed summary and any ERROR or WARNING lines to fix in their workbook.
 5. Keep the uploaded file for follow-ups in this chat.
 
-RULES in priority order: 1) PREPARERS: 4 to 8 heats between a preparer's heats, so they breeze in succession (they arrive with all horses; stalls must free up); 2) JOCKEYS: at least 4 heats between rides; clashes that bookings make unavoidable are kept mild and flagged CLASH for a manual fix (e.g. change rider); order close to the Order sheets; heats keep each preparer's BUO order (moves of max 2 places, only to avoid clashes); Prima Park sends 2 heats back-to-back on Monday. The jockey rides file is not needed. Output is a DRAFT to check. Be brief, NZ English.
+RULES: 1) JOCKEYS: never fewer than 4 heats between rides. 2) PREPARERS: 4 to 8 heats between their heats so they breeze in succession; over 8 only where the jockey rule forces it, flagged PREP GAP. 3) Order close to the Order sheets; BUO moves max 2. Prima Park sends 2 heats back-to-back on Monday. The jockey rides file is not needed. Output is a DRAFT to check. Be brief, NZ English.
 
 PYTHON CODE:
 import openpyxl,random,re,time
 F='<path of the uploaded workbook>'
-GAP=4;VMIN=4;VMAX=8;CAP=10;SHIFT=2;RUNS=200;TRIES=3;SEED=26;BUDGET=60;VERS=3;DAYS=['Mon','Tue'];JW=15;JPEN=300;PRIO=[]
+GAP=4;VMIN=4;VMAX=8;WJ=1e8;WP=1e6;CAP=10;SHIFT=2;RUNS=200;TRIES=3;SEED=26;BUDGET=60;VERS=3;DAYS=['Mon','Tue'];JW=15;JPEN=300;PRIO=[]
 PAIRS={('prima park','mon'):2}
 ALIAS={'mark brooks / alex olivera':'mark brooks'}
 NOJ={'','no jockey','tbc','tba','n/a','-','none'}
@@ -77,11 +78,11 @@ def score(seq,NP):
  last=[-99]*len(JID);v=0;first=[-1]*NP;lp=[-1]*NP;cnt=[0]*NP;mv=i=0
  for pi,r,u,J,n,S in seq:
   if first[pi]<0:first[pi]=i
-  else:g=i-lp[pi]-1;v+=(g<VMIN)*(1e8+(VMIN-g)*1e6)+(g>VMAX)*(1e8+(g-VMAX)*1e6)
+  else:g=i-lp[pi]-1;v+=(g<VMIN)*1e8*(VMIN-g+1)+(g>VMAX)*WP*(g-VMAX)**2
   d=abs(r-cnt[pi]);mv+=d+(2e6 if d>S else 0);cnt[pi]+=1
   for o,j in J:
    e=i+o-last[j]
-   if e<=GAP:v+=1e6*(GAP+1-e)**2
+   if e<=GAP:v+=WJ*(GAP+1-e)**2
    elif last[j]>=0:w=GAP+2 if j in PJ else JW;v+=max(0,e-w)*JPEN*(1+2*(j in PJ))
    last[j]=i+o
   i+=n;lp[pi]=i-1
@@ -96,7 +97,7 @@ def greedy(U,rnd):
   act.sort(key=lambda a:end.get(a[0],-99)+(rnd.random()*1.5 if rnd else 0));pick=None
   C=lambda a,i:sum(max(0,GAP+1-t-o+last[j]) for o,j in a[1][i][3])
   M=lambda a:min(range(min(a[1][0][5],len(a[1])-1)+1),key=lambda i:C(a,i))
-  u=[a for a in act if a[0] in end and t-end[a[0]]-1>=VMAX]
+  u=[a for a in act if a[0] in end and t-end[a[0]]-1>=VMAX and C(a,M(a))<(WJ<WP)*99]
   if u:pick=(u[0],M(u[0]))
   for a in act*(not pick):
    S=a[1][0][5];lim=0 if a[2]-a[1][0][1]>=S else min(S,len(a[1])-1)

@@ -123,7 +123,8 @@ Open the agent → **Instructions** and edit only these lines near the top of th
 | `PAIRS=` | `{('prima park','mon'):2}` | preparer + day sending heats back-to-back (lower case). Use `{}` if none |
 | `ALIAS=` | `{'mark brooks / alex olivera':'mark brooks'}` | merge name variants (lower case). Use `{}` if none |
 | `GAP=` | `4` | heats between a jockey's rides |
-| `VMIN=` / `VMAX=` | `4` / `8` | heats between two heats of the same preparer. This rule comes first; jockey clashes it forces are flagged CLASH |
+| `VMIN=` / `VMAX=` | `4` / `8` | heats between two heats of the same preparer. Exceeded only where the jockey 4-heat rule forces it (flagged PREP GAP) |
+| `WJ=` / `WP=` | `1e8` / `1e6` | rule priority: jockeys first (default). For preparers first use `WJ=1e6;WP=1e8` |
 | `JPEN=` | `300` | how hard to cut long jockey waits (0 = off; higher = shorter waits, but preparers may spread more) |
 | `PRIO=` | `['Sam Collett']` | jockeys whose waits are kept as short as possible (e.g. riding at the races that day). Use `[]` if none |
 

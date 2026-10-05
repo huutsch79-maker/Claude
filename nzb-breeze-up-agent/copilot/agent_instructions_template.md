@@ -9,7 +9,8 @@ Each new sale, change only the settings lines near the top of the code:
 - `PAIRS` – preparers sending heats back-to-back, e.g. `{('prima park','mon'):2}`
 - `ALIAS` – name variants (lower case), e.g. `{'mark brooks / alex olivera':'mark brooks'}`
 - `GAP` – heats between a jockey's rides (4)
-- `VMIN` / `VMAX` – heats between two heats of the same preparer (4 / 8). Preparer rules come first, jockey rules second
+- `VMIN` / `VMAX` – heats between two heats of the same preparer (4 / 8)
+- `WJ` / `WP` – priority: jockeys first by default (`1e8`/`1e6`); preparers first = `1e6`/`1e8`
 - `JPEN` – how hard to cut long jockey waits (300; 0 = off)
 - `PRIO` – jockeys to keep waits short, e.g. `['Sam Collett']`
 
