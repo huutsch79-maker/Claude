@@ -30,14 +30,16 @@ The output workbook contains all of James's original sheets plus:
 The scheduler needs only Python and NumPy, which Copilot's code interpreter has
 (no extra packages). Tested on 26RTR, with every result checked by a separate
 script: jockeys always have at least 4 heats between rides (0 clashes on both
-days in almost every run). **Tuesday** usually meets every rule (0 preparer gaps
-over 8, BUO moves of at most 2); when it does, the time left over is used to pull
-preparers closer to the Order sheet. **Monday** typically has 2 to 7 preparer
-gaps (mostly 9 heats), flagged PREP GAP. Each run differs; ask for "another
-version" to try again, and keep the best.
+days; if a day still has a clash after its normal 2 minutes, the code keeps
+searching for up to 6 minutes for that day). A final step pulls each preparer's
+heats together (gaps of 4 to 5 preferred) and closer to the Order sheet without
+adding any rule break. **Tuesday** usually meets every rule. **Monday** typically
+has 2 to 4 preparer gaps of 9 heats, flagged PREP GAP. Each run differs; ask for
+"another version" to try again, and keep the best.
 Monday is the hard day: Troy Harris, George Rooke and Ryan Elliot have 18 to 20
 rides each. Prima Park's Monday heats always go out in back-to-back pairs. A run
-takes about 3 to 4 minutes for both days.
+takes about 4 to 5 minutes for both days (up to about 8 if Monday needs the
+extra search).
 
 Time to build: about 30 minutes.
 
@@ -88,8 +90,8 @@ Time to build: about 30 minutes.
 
 1. In **Test your agent**, click the **📎** icon and attach `26RTR_Heat_Schedule.xlsx`.
 2. Type: **Build the breeze up schedule from this file**
-3. Expect, after about 3–4 minutes:
-   - `Mon: 109 heats, 0 jockey clashes, 0-5 preparer gaps outside 4-8, 0 BUO moves over 2`
+3. Expect, after about 4–8 minutes:
+   - `Mon: 109 heats, 0 jockey clashes, 2-4 preparer gaps outside 4-8, 0 BUO moves over 2`
    - `Tue: 114 heats, 0 jockey clashes, 0 preparer gaps outside 4-8, 0 BUO moves over 2`
    - `ERROR lot 349 listed twice …` and `ERROR lot 284 listed twice …` (real
      data problems in the 26RTR file)
@@ -172,8 +174,8 @@ everything is read from the uploaded workbook. Columns are found by header name
 - **Preview feature.** Code interpreter in Copilot Studio is in preview, so test
   after Microsoft updates. If it's ever unavailable, the fallback build is in
   `ALTERNATIVE_FLOW_SETUP.md`. That one uses a temporary OneDrive work folder.
-- **Run time** is about 3–4 minutes (2 minutes per day). If the chat ever times
-  out, ask the agent to do one day at a time (`DAYS=['Mon']`, then `['Tue']`) or
+- **Run time** is about 4–8 minutes (2 minutes per day, up to 6 for a day that
+  needs extra search to keep jockeys clear). If the chat ever times out, ask the agent to do one day at a time (`DAYS=['Mon']`, then `['Tue']`) or
   to "use TL=60".
 - **It's a draft.** Someone should check it before the programme is published.
   The Validation sheet lists what to fix in the source workbook.

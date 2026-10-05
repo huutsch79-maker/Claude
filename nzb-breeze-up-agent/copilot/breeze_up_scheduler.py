@@ -46,7 +46,7 @@ def solve(H,O,T,tl,seed):
   t=0;lr=[-9]*J;le=[-1]*P;cj=cg=0;c=[0]*P
   for p,i in q:
    if le[p]>=0:g=t-le[p]-1;cg+=max(VMIN-g,g-VMAX,0)
-   for x in U[p][i][2]:cg+=20*(abs(x-c[p])>SHIFT);c[p]+=1
+   for x in U[p][i][2]:cg+=50*(abs(x-c[p])>SHIFT);c[p]+=1
    for o,j in U[p][i][1]:d=t+o-lr[j]-1;cj+=max(0,GAP-d);lr[j]=t+o
    t+=len(U[p][i][0]);le[p]=t-1
   return wj*cj+wg*cg
@@ -95,28 +95,29 @@ def solve(H,O,T,tl,seed):
   else:q.insert(j,q.pop(i))
   o=Q[0];return q,lambda:Q.__setitem__(0,q),lambda:Q.__setitem__(0,o)
  B=(9e9,0)
- while time.time()<t9-5 and B[0]>0:
-  te=min(t9,time.time()+AT)
+ t8=t9-tl*.1;t0=t9-tl
+ while B[0]>0 and time.time()<(t8 if B[0]<200 else t0+3*tl)-5:
+  te=min(t8 if B[0]<200 else t0+3*tl,time.time()+AT)
   r=[0]*P;K=[0]*P;S=[[0]*k for k in n];M=[list(range(k)) for k in n];L=[0]*5
   for p in range(P):l=L.index(min(L));r[p]=L[l];K[p]=[l+.5]*n[p];L[l]+=n[p]
   c,s=sa(lambda:(r[:],[k[:] for k in K],[s[:] for s in S],[a[:] for a in M]),lm,cost(dec(),3,3),3,3,time.time()+(te-time.time())*.7,8,.3)
   r[:],K[:],S[:],M[:]=s;Q[0]=dec()
-  c,q=sa(lambda:Q[0][:],qm,cost(Q[0],30,1),30,1,te,3,.3)
+  c,q=sa(lambda:Q[0][:],qm,cost(Q[0],200,1),200,1,te,3,.3)
   if c<B[0]:B=(c,q)
- q=B[1]
- if B[0]==0:
-  def nv(q):
-   f=[0]*P;t=0
-   for p,i in q:
-    if f[p]==0:f[p]=t+1
-    t+=len(U[p][i][0])
-   return sum(f[a]>f[b] for a in range(P) for b in range(a+1,P))
-  v=nv(q)
-  while time.time()<t9:
-   z=q[:];i=Rn.randrange(len(z));j=min(len(z)-1,max(0,i+Rn.randint(-12,12)));z.insert(j,z.pop(i))
-   if cost(z,1,1)==0:
-    w=nv(z)
-    if w<=v:q,v=z,w
+ q=B[1];v=B[0];t9=max(t9,time.time()+tl*.1)
+ def nv(q):
+  f=[-1]*P;e=[0]*P;t=w=0
+  for p,i in q:
+   if f[p]<0:f[p]=t
+   else:w+=2*max(0,t-e[p]-6)
+   t+=len(U[p][i][0]);e[p]=t
+  return w+sum(f[a]>f[b] for a in range(P) for b in range(a+1,P))
+ m=nv(q)
+ while time.time()<t9:
+  z=q[:];i=Rn.randrange(len(z));j=min(len(z)-1,max(0,i+Rn.randint(-12,12)));z.insert(j,z.pop(i));x=cost(z,200,1)
+  if x<=v:
+   w=nv(z)
+   if x<v or w<=m:q,v,m=z,x,w
  return [h for p,i in q for h in U[p][i][0]]
 out=openpyxl.load_workbook(F);S=[]
 for dn in DAYS or [w.title for w in wb if k(w.title)[:3] in 'mon tue wed thu fri sat sun'.split() and ' ' not in k(w.title)]:
