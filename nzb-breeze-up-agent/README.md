@@ -21,7 +21,9 @@ for local runs and tests, and by the fallback build in
 | [docs/COPILOT_STUDIO_SETUP.md](docs/COPILOT_STUDIO_SETUP.md) | Step-by-step build of the agent (code interpreter, about 30 minutes) |
 | [docs/ALTERNATIVE_FLOW_SETUP.md](docs/ALTERNATIVE_FLOW_SETUP.md) | Fallback build: Office Script + agent flow + OneDrive work folder |
 | [docs/SOLUTION_ARCHITECTURE.md](docs/SOLUTION_ARCHITECTURE.md) | Design, algorithm, future-proofing, 26RTR data review |
-| [docs/AGENT_INSTRUCTIONS.md](docs/AGENT_INSTRUCTIONS.md) | Text to paste into Copilot Studio, including the scheduler code |
+| [docs/AGENT_INSTRUCTIONS.md](docs/AGENT_INSTRUCTIONS.md) | Text to paste into Copilot Studio, including the scheduler code (standard, pure Python) |
+| [docs/AGENT_INSTRUCTIONS_EXACT.md](docs/AGENT_INSTRUCTIONS_EXACT.md) | Same, with the exact OR-Tools solver. Use it if Copilot's sandbox has `ortools` (setup guide, Step 5a) |
+| [exact/README.md](exact/README.md) | Exact solver that meets every rule at once. Runs on a PC, or in Copilot if `ortools` is available |
 | [docs/BREEZE_UP_RULES.md](docs/BREEZE_UP_RULES.md) | Knowledge file: rules, glossary, output sheets |
 
 ## Developer quick start

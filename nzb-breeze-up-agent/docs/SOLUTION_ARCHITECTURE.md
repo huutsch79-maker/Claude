@@ -31,6 +31,30 @@ map when testing). Sale rules are edited in the instructions' settings lines. Th
 section below describes the fuller Office Script design, kept as a fallback in
 `ALTERNATIVE_FLOW_SETUP.md`.
 
+## 2b. Exact solver (OR-Tools CP-SAT): meets every rule at once
+
+With the agreed rules (jockeys at least 4 heats apart, preparer gaps of 4 to 8,
+BUO moves of at most 2, Prima Park pairs on Monday), the pure-Python search above
+keeps jockeys clean but leaves about 30 preparer gaps over 8 on 26RTR. Three
+other pure-Python approaches were tried (depth-first search, a start-plus-gaps
+annealing model, and SciPy's HiGHS MILP). None of them found a schedule that
+meets every rule within 5 minutes.
+
+A constraint solver can. `exact/solve_exact.py` models each heat as a slot
+1..N, with all slots different. Each jockey's rides are non-overlapping intervals
+of length 5. Each preparer's turns are placed 5 to 9 slots apart, in BUO order
+with at most 2 moves. The objective minimises how far preparers start from the
+preferred order. On 26RTR it finds schedules with **0 jockey clashes and every
+preparer gap between 4 and 8 on both days**. It also proves that Monday can't be
+done with a strict BUO order.
+
+Where it runs:
+- **In Copilot**, if the code-interpreter sandbox has the `ortools` package.
+  The sandbox package list isn't documented and packages can't be installed, so
+  test it once (Step 5a of the setup guide). If it's there, paste
+  `docs/AGENT_INSTRUCTIONS_EXACT.md`, which has the same model in 5.5k characters.
+- **On a PC** (`pip install ortools openpyxl`) otherwise. See `exact/README.md`.
+
 ## 2. Key design decision: deterministic solver, AI front door
 
 | Option | Verdict |

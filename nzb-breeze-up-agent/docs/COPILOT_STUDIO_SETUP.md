@@ -96,6 +96,27 @@ Time to build: about 30 minutes.
    the instruction "Use code interpreter to run the PYTHON CODE below EXACTLY"
    more prominent, and test again.
 
+## Step 5a: Check whether the exact solver can run in your Copilot (2 minutes)
+
+The standard instructions use a pure-Python search. It always keeps jockeys at
+least 4 heats apart, but on 26RTR it can't keep every preparer gap at 8 or below.
+An exact solver (Google OR-Tools) **can** meet all the rules at the same time.
+Whether it runs inside Copilot depends on the packages Microsoft installs in the
+code-interpreter sandbox, which isn't documented, and the sandbox can't install
+packages. So test it once:
+
+1. In the test panel, type:
+   > Use code interpreter to run exactly this and show me the output:
+   > `import importlib.util as u; print({m: bool(u.find_spec(m)) for m in ['ortools','scipy','pulp','highspy','openpyxl']})`
+2. If it shows **`'ortools': True`**: open `docs/AGENT_INSTRUCTIONS_EXACT.md`,
+   replace the agent's instructions with everything in the box, then **Save**
+   and **Publish**. Test again with the 26RTR file. Expect
+   `Mon: 109 heats, 0 jockey clashes, 0 preparer gaps outside 4-8` and the same
+   for Tuesday. A run takes about 1–3 minutes.
+3. If it shows **`'ortools': False`**: keep the standard instructions. For a
+   schedule that meets every rule, run `exact/solve_exact.py` on a PC (see
+   `exact/README.md`). It produces the same kind of output workbook.
+
 ## Step 6: Publish for James (5 minutes)
 
 1. Select **Publish** (top right) → **Publish**.
