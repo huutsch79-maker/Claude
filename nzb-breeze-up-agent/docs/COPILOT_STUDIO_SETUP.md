@@ -13,21 +13,27 @@ James: 📎 26RTR_Heat_Schedule.xlsx  "Build the breeze up schedule"
 NZB Breeze Up Agent (Copilot Studio)
    └─ code interpreter runs the scheduler code that's in the agent's instructions
    ▼
-Agent: "Mon: 109 heats, 0 jockey clashes … Tue: 114 heats, 0 jockey clashes …"
+Agent: "Mon: 109 heats, 0 jockey clashes, 3 preparer gaps outside 4-8 … Tue: 114 heats, 0 jockey clashes, 0 preparer gaps …"
        ⬇ NZB_Breeze_Up_Schedule.xlsx   (download in the chat)
 ```
 
 The output workbook contains all of James's original sheets plus:
 - **Mon Schedule** / **Tue Schedule**: heat order, preparer, vendor, BUO, lot,
-  breeding, jockey, heats since the jockey's last ride, and OK / CLASH;
-- **Mon Jockeys** / **Tue Jockeys**: each jockey's rides, first and last heat,
-  longest wait, and number of waits over 15 heats (longest day first);
-- **Validation**: the summary, duplicate lots, Day-column mismatches, preparers
-  missing from the order sheet, horses with no jockey, and each preparer's heat range.
+  breeding, jockey, heats since the jockey's last ride, the preparer gap, and a
+  check: OK / CLASH / PREP GAP / BUO MOVE;
+- **Mon Jockeys** / **Tue Jockeys**: each jockey's rides, first and last heat and
+  longest wait (longest day first);
+- **Validation**: the summary, duplicate lots, preparers missing from the order
+  sheet, and BUO or jockey problems in the data.
 
-Tested on the 26RTR data: **Mon 109 heats and Tue 114 heats, both with 0 jockey
-clashes**. Prima Park's Monday heats always go out in back-to-back pairs, BUO
-moves are at most 2 places, and a run takes about 15–20 seconds.
+The scheduler needs only Python and NumPy, which Copilot's code interpreter has
+(no extra packages). Tested on 26RTR, with every result checked by a separate
+script: jockeys always have at least 4 heats between rides (0 clashes on both
+days). **Tuesday** meets every rule (0 preparer gaps over 8, BUO moves of at
+most 2). **Monday** typically has 0 to 5 preparer gaps of 9 heats, flagged PREP GAP.
+Monday is the hard day: Troy Harris, George Rooke and Ryan Elliot have 18 to 20
+rides each. Prima Park's Monday heats always go out in back-to-back pairs. A run
+takes about 3 to 4 minutes for both days.
 
 Time to build: about 30 minutes.
 
@@ -78,44 +84,31 @@ Time to build: about 30 minutes.
 
 1. In **Test your agent**, click the **📎** icon and attach `26RTR_Heat_Schedule.xlsx`.
 2. Type: **Build the breeze up schedule from this file**
-3. Expect, after about 20–40 seconds:
-   - `Mon: 109 heats, 0 jockey clashes, 6 preparers breezing at once`
-   - `Tue: 114 heats, 0 jockey clashes, 8 preparers breezing at once`
+3. Expect, after about 3–4 minutes:
+   - `Mon: 109 heats, 0 jockey clashes, 0-5 preparer gaps outside 4-8, 0 BUO moves over 2`
+   - `Tue: 114 heats, 0 jockey clashes, 0 preparer gaps outside 4-8, 0 BUO moves over 2`
    - `ERROR lot 349 listed twice …` and `ERROR lot 284 listed twice …` (real
      data problems in the 26RTR file)
    - a download link for **NZB_Breeze_Up_Schedule.xlsx**
 4. Download it and check the **Mon Schedule** sheet. Prima Park's Monday heats
-   should come in pairs (with the standard settings: heats 10–11, 26–27, 36–37, 47–48, 62–63).
+   should come in pairs, and the Check column shows any PREP GAP heats.
 5. Follow-ups in the same chat:
-   - **Redo it with 7 preparers at once**: the agent sets `LANES=[7]`.
-   - **Give me another version**: the agent sets a new `SEED`.
-   - **What does CLASH mean?**: answered from the rules.
-   - **Keep Sam Collett's waits short**: the agent sets `PRIO=['Sam Collett']`.
+   - **Give me another version**: the agent sets a new `SEED`. Each run differs,
+     so asking again can remove Monday's PREP GAP flags.
+   - **Redo Monday with more time**: the agent sets `DAYS=['Mon']` and a higher `TL`.
+   - **What does PREP GAP mean?**: answered from the rules.
 6. Open the **activity map** (or the `</> Code` view) to confirm the agent ran the
    code from the instructions, not code it wrote itself. If it improvised, make
    the instruction "Use code interpreter to run the PYTHON CODE below EXACTLY"
    more prominent, and test again.
 
-## Step 5a: Check whether the exact solver can run in your Copilot (2 minutes)
+## Step 5a: Packages in Copilot's code interpreter (checked)
 
-The standard instructions use a pure-Python search. It always keeps jockeys at
-least 4 heats apart, but on 26RTR it can't keep every preparer gap at 8 or below.
-An exact solver (Google OR-Tools) **can** meet all the rules at the same time.
-Whether it runs inside Copilot depends on the packages Microsoft installs in the
-code-interpreter sandbox, which isn't documented, and the sandbox can't install
-packages. So test it once:
-
-1. In the test panel, type:
-   > Use code interpreter to run exactly this and show me the output:
-   > `import importlib.util as u; print({m: bool(u.find_spec(m)) for m in ['ortools','scipy','pulp','highspy','openpyxl']})`
-2. If it shows **`'ortools': True`**: open `docs/AGENT_INSTRUCTIONS_EXACT.md`,
-   replace the agent's instructions with everything in the box, then **Save**
-   and **Publish**. Test again with the 26RTR file. Expect
-   `Mon: 109 heats, 0 jockey clashes, 0 preparer gaps outside 4-8` and the same
-   for Tuesday. A run takes about 1–3 minutes.
-3. If it shows **`'ortools': False`**: keep the standard instructions. For a
-   schedule that meets every rule, run `exact/solve_exact.py` on a PC (see
-   `exact/README.md`). It produces the same kind of output workbook.
+Copilot's code-interpreter sandbox has only **NumPy** (plus the Python standard
+library and openpyxl for Excel). OR-Tools, SciPy, PuLP, HiGHS and networkx are
+not there, and packages can't be installed. The scheduler above is written for
+that. `docs/AGENT_INSTRUCTIONS_EXACT.md` (OR-Tools) is only for an environment
+that has OR-Tools; don't use it in this Copilot.
 
 ## Step 6: Publish for James (5 minutes)
 
@@ -130,7 +123,7 @@ packages. So test it once:
    the download appears. This is the one step that couldn't be checked from here.
 
 **Suggested prompts** (agent Overview): *Build the breeze up schedule from this
-file* · *Redo Tuesday with 7 preparers at once* · *Give me another version* ·
+file* · *Redo Monday with more time* · *Give me another version* ·
 *Explain the Validation sheet*.
 
 ---
@@ -144,10 +137,10 @@ Open the agent → **Instructions** and edit only these lines near the top of th
 | `PAIRS=` | `{('prima park','mon'):2}` | preparer + day sending heats back-to-back (lower case). Use `{}` if none |
 | `ALIAS=` | `{'mark brooks / alex olivera':'mark brooks'}` | merge name variants (lower case). Use `{}` if none |
 | `GAP=` | `4` | heats between a jockey's rides |
-| `VMIN=` / `VMAX=` | `4` / `8` | heats between two heats of the same preparer. Exceeded only where the jockey 4-heat rule forces it (flagged PREP GAP) |
-| `WJ=` / `WP=` | `1e8` / `1e6` | rule priority: jockeys first (default). For preparers first use `WJ=1e6;WP=1e8` |
-| `JPEN=` | `300` | how hard to cut long jockey waits (0 = off; higher = shorter waits, but preparers may spread more) |
-| `PRIO=` | `['Sam Collett']` | jockeys whose waits are kept as short as possible (e.g. riding at the races that day). Use `[]` if none |
+| `VMIN=` / `VMAX=` | `4` / `8` | heats between two heats of the same preparer. Exceeded only where the search can't avoid it (flagged PREP GAP) |
+| `SHIFT=` | `2` | how many places a heat may move from the preparer's BUO order |
+| `TL=` | `120` | seconds of search per day. More time gives fewer PREP GAP flags |
+| `SEED=` | `1` | change it for another version |
 
 Then **Publish**. James can also say a change in chat for a single run, e.g.
 *"This time Prima Park sends 2 in a row on Tuesday"*.
@@ -175,7 +168,8 @@ everything is read from the uploaded workbook. Columns are found by header name
 - **Preview feature.** Code interpreter in Copilot Studio is in preview, so test
   after Microsoft updates. If it's ever unavailable, the fallback build is in
   `ALTERNATIVE_FLOW_SETUP.md`. That one uses a temporary OneDrive work folder.
-- **Run time** is about 15–40 seconds. If the chat ever times out, ask the agent
-  to "use STEPS=6000" for that run.
+- **Run time** is about 3–4 minutes (2 minutes per day). If the chat ever times
+  out, ask the agent to do one day at a time (`DAYS=['Mon']`, then `['Tue']`) or
+  to "use TL=60".
 - **It's a draft.** Someone should check it before the programme is published.
   The Validation sheet lists what to fix in the source workbook.
