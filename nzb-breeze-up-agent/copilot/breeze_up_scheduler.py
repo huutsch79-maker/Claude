@@ -1,9 +1,9 @@
-import openpyxl,re,time,random
+import openpyxl,time,random
 F='INPUT.xlsx'
 GAP=4;VMIN=4;VMAX=8;SHIFT=2;TL=120;SEED=1;DAYS=[]
 PAIRS={('prima park','mon'):2}
 ALIAS={'mark brooks / alex olivera':'mark brooks'}
-def k(v):return re.sub(r'\s+',' ',str(v or '')).strip().lower()
+def k(v):return' '.join(str(v or'').split()).lower()
 wb=openpyxl.load_workbook(F,data_only=True);E=[];seen={}
 def rows(n):return [list(r) for w in wb if k(w.title)==k(n) for r in w.iter_rows(values_only=True)]
 def col(h,*ns):return next((i for f in(str.__eq__,str.startswith) for n in ns for i,x in enumerate(h) if f(k(x),n)),-1)
@@ -27,13 +27,13 @@ def load(d):
   hk=sorted(h for h in H if h[0]==p);n=PAIRS.get((p,k(d)[:3]),1);T[p]=[]
   for i in range(0,len(hk),n):
    u=hk[i:i+n];js=[x[6] for h in u for x in H[h] if x[6]]
-   if len(js)>len(set(js)):E.append(f'WARNING {d}: {nm[p]} BUO {u[0][1]:g} jockey twice in one heat/turn');T[p]+=[[h] for h in u] if n>1 else [u]
+   if len(js)>len(set(js)):E.append(f'WARNING {d}: {nm[p]} BUO {u[0][1]:g} same jockey twice');T[p]+=[[h] for h in u] if n>1 else [u]
    else:T[p].append(u)
  return H,O,T
 def solve(H,O,T,tl,seed):
  Rn=random.Random(seed);P=len(O);ji={};U=[];t9=time.time()+tl;AT=max(30,tl/2)
  for p in O:
-  hk=sorted(h for h in H if h[0]==p);U.append([(u,[(o,ji.setdefault(x[6],len(ji))) for o,h in enumerate(u) for x in H[h] if x[6]],[hk.index(h) for h in u]) for u in T[p]])
+  hk=sorted(h for h in H if h[0]==p);U.append([(u,[(o,ji.setdefault(x[6],len(ji))) for o,h in enumerate(u) for x in H[h] if x[6]],[hk.index(h) for h in u],len(u)) for u in T[p]])
  n=[len(u) for u in U];J=len(ji)
  def ok(p,m):
   c=0
@@ -42,15 +42,30 @@ def solve(H,O,T,tl,seed):
     if abs(x-c)>SHIFT:return 0
     c+=1
   return 1
- def cost(q,wj,wg):
+ def cost(q,wj,wg,A=VMIN,Z=VMAX,F=SHIFT,G=GAP):
   t=0;lr=[-9]*J;le=[-1]*P;cj=cg=0;c=[0]*P
   for p,i in q:
-   if le[p]>=0:g=t-le[p]-1;cg+=max(VMIN-g,g-VMAX,0)
-   for x in U[p][i][2]:cg+=50*(abs(x-c[p])>SHIFT);c[p]+=1
-   for o,j in U[p][i][1]:d=t+o-lr[j]-1;cj+=max(0,GAP-d);lr[j]=t+o
-   t+=len(U[p][i][0]);le[p]=t-1
+   _,Y,R,z=U[p][i];e=le[p];y=c[p]
+   if e>=0:
+    g=t-e-1
+    if g<A:cg+=A-g
+    elif g>Z:cg+=g-Z
+   for x in R:
+    if x-y>F or y-x>F:cg+=50
+    y+=1
+   c[p]=y
+   for o,j in Y:
+    d=t+o-lr[j]-1
+    if d<G:cj+=G-d
+    lr[j]=t+o
+   t+=z;le[p]=t-1
   return wj*cj+wg*cg
- def dec():return [(p,M[p][i]) for a,b,p,i in sorted((r[p]+i+sum(S[p][:i+1]),K[p][i],p,i) for p in range(P) for i in range(n[p]))]
+ def dec():
+  z=[]
+  for p in range(P):
+   a=r[p]-1;Sp=S[p];Kp=K[p]
+   for i in range(n[p]):a+=1+Sp[i];z.append((a,Kp[i],p,i))
+  z.sort();return [(p,M[p][i]) for a,b,p,i in z]
  def sa(st,mv,c,wj,wg,te,T0,T1):
   b=(c,st());t0=time.time();Tm=T0;it=0
   while c>0:
@@ -121,7 +136,7 @@ def solve(H,O,T,tl,seed):
  return [h for p,i in q for h in U[p][i][0]]
 out=openpyxl.load_workbook(F);S=[]
 for dn in DAYS or [w.title for w in wb if k(w.title)[:3] in 'mon tue wed thu fri sat sun'.split() and ' ' not in k(w.title)]:
- H,O,T=load(dn);seq=solve(H,O,T,TL,SEED);ws=out.create_sheet(dn+' Schedule');R={h:i for p in O for i,h in enumerate(sorted(x for x in H if x[0]==p))};IN={h for p in O for u in T[p] for h in u[1:]}
+ H,O,T=load(dn);t=time.time();seq=solve(H,O,T,TL,SEED);ws=out.create_sheet(dn+' Schedule');R={h:i for p in O for i,h in enumerate(sorted(x for x in H if x[0]==p))};IN={h for p in O for u in T[p] for h in u[1:]}
  ws.append(['Heat','Preparer','Vendor','BUO','Lot','Breeding','Jockey','Heats since last ride','Preparer gap','Check']);la={};pe={};c=[0,0,0];JR={}
  for i,h in enumerate(seq,1):
   p=h[0];q=i-pe[p][0]-1 if p in pe else '';n=pe.get(p,(0,0))[1];pe[p]=(i,n+1);gb=q!=''and h not in IN and not VMIN<=q<=VMAX;mb=abs(R[h]-n)>SHIFT;c[1]+=gb;c[2]+=mb
@@ -131,6 +146,6 @@ for dn in DAYS or [w.title for w in wb if k(w.title)[:3] in 'mon tue wed thu fri
    if x[6]:la[x[6]]=i;JR.setdefault(x[5],[]).append(i)
  jw=out.create_sheet(dn+' Jockeys');jw.append(['Jockey','Rides','First heat','Last heat','Longest wait'])
  for j,v in sorted(JR.items(),key=lambda z:z[1][0]-z[1][-1]):jw.append([j,len(v),v[0],v[-1],max([b-a-1 for a,b in zip(v,v[1:])],default=0)])
- S.append(f'{dn}: {len(seq)} heats, {c[0]} jockey clashes, {c[1]} preparer gaps outside {VMIN}-{VMAX}, {c[2]} BUO moves over {SHIFT}')
+ S.append(f'{dn}: {len(seq)} heats, {c[0]} jockey clashes, {c[1]} preparer gaps outside {VMIN}-{VMAX}, {c[2]} BUO moves over {SHIFT} ({time.time()-t:.0f}s)')
 v=out.create_sheet('Validation');[v.append([x]) for x in S+E]
 out.save('NZB_Breeze_Up_Schedule.xlsx');print('\n'.join(S+E))
