@@ -38,6 +38,19 @@ to the preferred order.
    on Monday has four jockeys, so it sends 2 of its heats consecutively. Check
    this every sale.
 
+## Preparers in succession (most important after jockey gaps)
+Preparers arrive with all their horses and their stalls must be freed for later
+arrivals, so each preparer breezes **in succession, as close together as its
+jockeys allow**. The agent works out each preparer's *tightest possible span* (how
+tightly its heats could run, given its own jockeys need 4 heats between rides), and
+strongly penalises any extra spread, especially large stretches of small preparers.
+New preparers start mainly to fill gaps while earlier preparers' jockeys are
+recovering. The Validation sheet lists each preparer's first and last heat.
+
+To tighten a day further, change the preferred order so preparers who share busy
+jockeys are not on course together. For example, for 26RTR Monday, putting Prima
+Park first (as in 25RTR) cut the total spread from about 600 to about 500 heats.
+
 ## How the draft is built
 The scheduler uses the same "rolling wave" pattern as the 25RTR final programme.
 About 5 preparers rotate one heat each. When one finishes, the next preparer in
